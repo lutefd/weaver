@@ -171,6 +171,12 @@ Compose all tracked branches:
 weaver compose --all
 ```
 
+Skip a problematic branch but keep the rest of the compose:
+
+```bash
+weaver compose --integration integration --create integration-preview --skip feature-debug-search-api-curl
+```
+
 Compose is ephemeral by default. It uses detached `HEAD`, performs the merges, and returns you to the original branch.
 
 If you want a new integration branch created from the composed result, opt in explicitly:
@@ -189,7 +195,9 @@ The `--create` form creates `integration` from the composed commit and then rest
 
 The `--update` form starts from `main`, composes the requested branches, force-moves `integration` to that fresh result, and then restores your original branch.
 
-If one branch is heavily diverged and keeps breaking a large compose, it is often better to remove that branch from the compose or saved integration, fix or merge it manually first, and then add it back once it is stable.
+If compose hits a conflict, Weaver reports the branch that failed and the conflicted files.
+
+If one branch is heavily diverged and keeps breaking a large compose, it is often better to remove that branch from the compose or saved integration, repair it first, and then merge it manually onto the branch produced by `--create` or `--update` before adding it back.
 
 If you already saved a reusable strategy, compose from it directly:
 
@@ -211,6 +219,13 @@ Show it:
 
 ```bash
 weaver integration show integration
+```
+
+Diagnose it:
+
+```bash
+weaver integration doctor integration
+weaver integration doctor integration --json
 ```
 
 List saved strategies:

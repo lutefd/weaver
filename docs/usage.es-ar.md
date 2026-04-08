@@ -171,6 +171,12 @@ Componer todas las branches registradas:
 weaver compose --all
 ```
 
+Saltar una branch problemática y mantener el resto de la composición:
+
+```bash
+weaver compose --integration integration --create integration-preview --skip feature-debug-search-api-curl
+```
+
 La composición es efímera por defecto. Usa `HEAD` detached, hace los merges y vuelve a la branch original.
 
 Si querés crear una nueva branch de integración a partir del resultado compuesto, hacelo de forma explícita:
@@ -189,7 +195,9 @@ Con `--create`, Weaver crea `integration` desde el commit compuesto y después v
 
 Con `--update`, Weaver parte de `main`, recompone las branches pedidas, mueve `integration` por fuerza a ese resultado nuevo y después vuelve a la branch original.
 
-Si una branch está muy divergida y sigue rompiendo una composición grande, normalmente conviene sacarla de esa composición o de la integración guardada, arreglarla o mergearla manualmente primero, y recién después volver a sumarla cuando esté estable.
+Si la composición encuentra un conflicto, Weaver informa qué branch falló y qué archivos entraron en conflicto.
+
+Si una branch está muy divergida y sigue rompiendo una composición grande, normalmente conviene sacarla de esa composición o de la integración guardada, arreglarla primero, y después mergearla manualmente en la branch producida por `--create` o `--update` antes de volver a sumarla cuando esté estable.
 
 Si ya guardaste una estrategia reutilizable, podés componer directo desde ahí:
 
@@ -211,6 +219,13 @@ Mostrar la estrategia:
 
 ```bash
 weaver integration show integration
+```
+
+Diagnosticar la estrategia:
+
+```bash
+weaver integration doctor integration
+weaver integration doctor integration --json
 ```
 
 Listar las estrategias guardadas:

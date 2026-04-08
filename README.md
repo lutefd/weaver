@@ -31,9 +31,10 @@ weaver update [branch...] [--group NAME | --integration NAME | --all]
 weaver sync [branch]
 weaver continue
 weaver abort
-weaver compose [branch...] [--group NAME | --integration NAME | --all] [--base BRANCH] [--create BRANCH | --update BRANCH] [--dry-run]
+weaver compose [branch...] [--group NAME | --integration NAME | --all] [--base BRANCH] [--create BRANCH | --update BRANCH] [--skip BRANCH...] [--dry-run]
 weaver integration save <name> <branch...> [--base BRANCH]
 weaver integration show <name>
+weaver integration doctor <name> [--json]
 weaver integration list
 weaver integration remove <name>
 weaver integration export <name> [--json]
@@ -94,10 +95,13 @@ Compose it:
 
 ```bash
 weaver compose feature-c --dry-run
+weaver compose --integration integration --dry-run
 weaver compose feature-c
 weaver compose feature-c --base main --create integration
 weaver compose feature-c --base main --update integration
 weaver integration save integration --base main feature-a feature-b feature-c
+weaver integration doctor integration
+weaver compose --integration integration --create integration-preview --skip feature-c
 weaver compose --integration integration --update integration
 ```
 
@@ -122,7 +126,10 @@ None of the `.git/weaver/` files are intended to be committed.
 - `weaver abort` restores the original branch.
 - `weaver compose` is ephemeral by default.
 - `weaver compose --integration <name>` reuses the saved base and branch set from that integration strategy.
-- If a very divergent branch keeps breaking a large compose, remove it from that compose or integration first, fix or merge it manually, then add it back once it is stable again.
+- `weaver integration doctor <name>` checks whether a saved integration is coherent, including drift, foreign ancestry, and merge-heavy branches.
+- Compose failures report the branch that failed and the conflicting files.
+- `weaver compose --skip <branch>` leaves that branch out of the resolved compose order so you can merge it manually later.
+- If a very divergent branch keeps breaking a large compose, remove it from that compose or integration first, repair it, and then merge it manually onto the branch produced by `weaver compose --create <branch>` or `--update <branch>` before adding it back once it is stable again.
 - `weaver compose --create <branch>` creates a new integration branch from the composed result.
 - `weaver compose --update <branch>` rebuilds an existing integration branch from the clean base and force-moves it to the new composed result.
 
