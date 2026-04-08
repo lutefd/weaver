@@ -9,14 +9,16 @@ import (
 
 	"github.com/lutefd/weaver/internal/deps"
 	"github.com/lutefd/weaver/internal/group"
+	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/lutefd/weaver/internal/stack"
 )
 
 type State struct {
-	Version      int                 `json:"version"`
-	ExportedAt   time.Time           `json:"exported_at"`
-	Dependencies map[string]string   `json:"dependencies"`
-	Groups       map[string][]string `json:"groups,omitempty"`
+	Version      int                                 `json:"version"`
+	ExportedAt   time.Time                           `json:"exported_at"`
+	Dependencies map[string]string                   `json:"dependencies"`
+	Groups       map[string][]string                 `json:"groups,omitempty"`
+	Integrations map[string]weaverintegration.Recipe `json:"integrations,omitempty"`
 }
 
 type Manager struct {
@@ -30,6 +32,7 @@ func New(repoRoot string) *Manager {
 func (m *Manager) Export() (*State, error) {
 	dependencySource := deps.NewLocalSource(m.repoRoot)
 	groupStore := group.NewStore(m.repoRoot)
+	integrationStore := weaverintegration.NewStore(m.repoRoot)
 
 	dependencies, err := dependencySource.Map(nil)
 	if err != nil {
@@ -39,12 +42,17 @@ func (m *Manager) Export() (*State, error) {
 	if err != nil {
 		return nil, err
 	}
+	integrations, err := integrationStore.List()
+	if err != nil {
+		return nil, err
+	}
 
 	return &State{
 		Version:      1,
 		ExportedAt:   time.Now().UTC(),
 		Dependencies: dependencies,
 		Groups:       groups,
+		Integrations: integrations,
 	}, nil
 }
 
@@ -65,6 +73,9 @@ func (m *Manager) Import(state *State) error {
 		return err
 	}
 	if err := group.NewStore(m.repoRoot).Replace(state.Groups); err != nil {
+		return err
+	}
+	if err := weaverintegration.NewStore(m.repoRoot).Replace(state.Integrations); err != nil {
 		return err
 	}
 

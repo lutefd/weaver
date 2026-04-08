@@ -13,6 +13,7 @@ import (
 	"github.com/lutefd/weaver/internal/config"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
+	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,30 @@ func TestGroupCommands(t *testing.T) {
 	}
 }
 
+func TestIntegrationCommands(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	var out bytes.Buffer
+	integrationSaveCmd.SetOut(&out)
+	integrationSaveCmd.Flags().Set("base", "main")
+	t.Cleanup(func() {
+		integrationSaveCmd.Flags().Set("base", "")
+	})
+	if err := integrationSaveCmd.RunE(integrationSaveCmd, []string{"integration", "feature-a", "feature-b"}); err != nil {
+		t.Fatalf("integration save error = %v", err)
+	}
+
+	out.Reset()
+	integrationShowCmd.SetOut(&out)
+	if err := integrationShowCmd.RunE(integrationShowCmd, []string{"integration"}); err != nil {
+		t.Fatalf("integration show error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "base: main") || !strings.Contains(got, "feature-a -> feature-b") {
+		t.Fatalf("integration show output = %q", got)
+	}
+}
+
 func TestResolveBranchSelection(t *testing.T) {
 	repoRoot := t.TempDir()
 	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
@@ -62,11 +87,11 @@ func TestResolveBranchSelection(t *testing.T) {
 
 	cmd := cloneComposeCommand()
 	cmd.Flags().Set("group", "sprint-42")
-	branches, err := resolveBranchSelection(repoRoot, nil, cmd)
+	selection, err := resolveBranchSelection(repoRoot, nil, cmd)
 	if err != nil {
 		t.Fatalf("resolveBranchSelection() error = %v", err)
 	}
-	if got := strings.Join(branches, ","); got != "feature-a,feature-b" {
+	if got := strings.Join(selection.Branches, ","); got != "feature-a,feature-b" {
 		t.Fatalf("resolveBranchSelection() = %q", got)
 	}
 
@@ -86,12 +111,40 @@ func TestResolveBranchSelectionExplicitArgs(t *testing.T) {
 	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
 
 	cmd := cloneUpdateCommand()
-	branches, err := resolveBranchSelection(repoRoot, []string{"main", "feature-a"}, cmd)
+	selection, err := resolveBranchSelection(repoRoot, []string{"main", "feature-a"}, cmd)
 	if err != nil {
 		t.Fatalf("resolveBranchSelection() error = %v", err)
 	}
-	if got := strings.Join(branches, ","); got != "main,feature-a" {
+	if got := strings.Join(selection.Branches, ","); got != "main,feature-a" {
 		t.Fatalf("resolveBranchSelection() = %q", got)
+	}
+}
+
+func TestResolveBranchSelectionIntegration(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	if err := weaverintegration.NewStore(repoRoot).Save("integration", weaverintegration.Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a", "feature-b"},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	cmd := cloneComposeCommand()
+	cmd.Flags().Set("integration", "integration")
+	selection, err := resolveBranchSelection(repoRoot, nil, cmd)
+	if err != nil {
+		t.Fatalf("resolveBranchSelection() error = %v", err)
+	}
+	if selection.IntegrationName != "integration" {
+		t.Fatalf("IntegrationName = %q, want integration", selection.IntegrationName)
+	}
+	if selection.Base != "main" {
+		t.Fatalf("Base = %q, want main", selection.Base)
+	}
+	if got := strings.Join(selection.Branches, ","); got != "feature-a,feature-b" {
+		t.Fatalf("Branches = %q, want feature-a,feature-b", got)
 	}
 }
 
@@ -156,6 +209,12 @@ func TestExportAndImportCommands(t *testing.T) {
 	if err := group.NewStore(repoRoot).Create("sprint-42", []string{"feature-a", "feature-b"}); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
+	if err := weaverintegration.NewStore(repoRoot).Save("integration", weaverintegration.Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a", "feature-b"},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	var exported bytes.Buffer
 	exportCmd.SetOut(&exported)
@@ -180,6 +239,58 @@ func TestExportAndImportCommands(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "feature-b: feature-a") {
 		t.Fatalf("imported deps missing branch mapping: %s", data)
+	}
+
+	integrationData, err := os.ReadFile(filepath.Join(importRepo, ".git", "weaver", "integrations.yaml"))
+	if err != nil {
+		t.Fatalf("read imported integrations: %v", err)
+	}
+	if !strings.Contains(string(integrationData), "base: main") || !strings.Contains(string(integrationData), "- feature-a") {
+		t.Fatalf("imported integrations missing recipe: %s", integrationData)
+	}
+}
+
+func TestIntegrationExportAndImportCommands(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	if err := weaverintegration.NewStore(repoRoot).Save("integration", weaverintegration.Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a", "feature-b"},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var exported bytes.Buffer
+	integrationExportCmd.SetOut(&exported)
+	integrationExportCmd.Flags().Set("json", "true")
+	t.Cleanup(func() {
+		integrationExportCmd.Flags().Set("json", "false")
+	})
+	if err := integrationExportCmd.RunE(integrationExportCmd, []string{"integration"}); err != nil {
+		t.Fatalf("integration export error = %v", err)
+	}
+
+	importRepo := t.TempDir()
+	setTestApp(t, importRepo, &staticRunner{repoRoot: importRepo})
+	exportPath := filepath.Join(t.TempDir(), "integration.json")
+	if err := os.WriteFile(exportPath, exported.Bytes(), 0o644); err != nil {
+		t.Fatalf("write integration export file: %v", err)
+	}
+
+	if err := integrationImportCmd.RunE(integrationImportCmd, []string{exportPath}); err != nil {
+		t.Fatalf("integration import error = %v", err)
+	}
+
+	got, ok, err := weaverintegration.NewStore(importRepo).Get("integration")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Get() ok = false, want true")
+	}
+	if got.Base != "main" || strings.Join(got.Branches, ",") != "feature-a,feature-b" {
+		t.Fatalf("imported integration = %#v", got)
 	}
 }
 
@@ -234,6 +345,7 @@ func setTestApp(t *testing.T, repoRoot string, runner gitrunner.Runner) {
 func cloneComposeCommand() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("group", "", "group")
+	cmd.Flags().String("integration", "", "integration")
 	cmd.Flags().Bool("all", false, "all")
 	cmd.Flags().String("base", "", "base")
 	cmd.Flags().String("create", "", "create")
@@ -245,6 +357,7 @@ func cloneComposeCommand() *cobra.Command {
 func cloneUpdateCommand() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("group", "", "group")
+	cmd.Flags().String("integration", "", "integration")
 	cmd.Flags().Bool("all", false, "all")
 	return cmd
 }

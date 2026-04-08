@@ -12,6 +12,7 @@ import (
 	"github.com/lutefd/weaver/internal/deps"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
+	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/lutefd/weaver/internal/rebaser"
 )
 
@@ -43,6 +44,12 @@ func TestCheckerHealthyRepo(t *testing.T) {
 	if err := group.NewStore(repo).Create("sprint-42", []string{"feature-a", "feature-b"}); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
+	if err := weaverintegration.NewStore(repo).Save("integration", weaverintegration.Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a", "feature-b"},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	cfg := config.Default()
 	report, err := New(gitrunner.NewCLIRunner(repo, nil), &cfg, nil).Run(context.Background())
@@ -73,6 +80,12 @@ func TestCheckerReportsMissingBranchAndDirtyTree(t *testing.T) {
 	}
 	if err := group.NewStore(repo).Create("sprint-42", []string{"feature-b"}); err != nil {
 		t.Fatalf("Create() error = %v", err)
+	}
+	if err := weaverintegration.NewStore(repo).Save("integration", weaverintegration.Recipe{
+		Base:     "main",
+		Branches: []string{"feature-b"},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
 	}
 	writeRepoFile(t, repo, "README.md", "dirty\n")
 

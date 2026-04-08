@@ -14,6 +14,7 @@ import (
 	"github.com/lutefd/weaver/internal/deps"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
+	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/lutefd/weaver/internal/rebaser"
 	"github.com/lutefd/weaver/internal/resolver"
 )
@@ -117,6 +118,7 @@ func (c *Checker) Run(ctx context.Context) (*Report, error) {
 	c.checkBaseBranch(ctx, report)
 	c.checkDependencies(ctx, report, trackedBranches)
 	c.checkGroups(ctx, report, trackedBranches)
+	c.checkIntegrations(ctx, report, trackedBranches)
 	c.checkRebaseState(ctx, report, trackedBranches)
 	c.checkCurrentBranch(ctx, report)
 	c.checkWorkingTree(ctx, report)
@@ -290,6 +292,33 @@ func (c *Checker) checkGroups(ctx context.Context, report *Report, tracked map[s
 		for _, branch := range groups[name] {
 			tracked[branch] = struct{}{}
 			c.checkBranchPresence(ctx, report, branch, fmt.Sprintf("group branch in %q", name), "group_branch")
+		}
+	}
+}
+
+func (c *Checker) checkIntegrations(ctx context.Context, report *Report, tracked map[string]struct{}) {
+	store := weaverintegration.NewStore(c.runner.RepoRoot())
+	integrations, err := store.List()
+	if err != nil {
+		report.addHint(LevelFail, "integrations", "fix or remove .git/weaver/integrations.yaml", "cannot load integration strategies: %v", err)
+		return
+	}
+
+	report.add(LevelOK, "integrations", "integration strategies file is valid (%d integrations)", len(integrations))
+
+	names := make([]string, 0, len(integrations))
+	for name := range integrations {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		recipe := integrations[name]
+		tracked[recipe.Base] = struct{}{}
+		c.checkBranchPresence(ctx, report, recipe.Base, fmt.Sprintf("integration base in %q", name), "integration_branch")
+		for _, branch := range recipe.Branches {
+			tracked[branch] = struct{}{}
+			c.checkBranchPresence(ctx, report, branch, fmt.Sprintf("integration branch in %q", name), "integration_branch")
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 func init() {
 	composeCmd.Flags().String("group", "", "compose all branches in a named group")
+	composeCmd.Flags().String("integration", "", "compose branches from a saved integration strategy")
 	composeCmd.Flags().Bool("all", false, "compose every tracked branch")
 	composeCmd.Flags().String("base", "", "base branch to compose onto")
 	composeCmd.Flags().String("create", "", "create a new branch with the composed result")
@@ -27,7 +28,7 @@ var composeCmd = &cobra.Command{
 	Short: "Compose one or more branches into an integration state",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		selected, err := resolveBranchSelection(AppContext().Runner.RepoRoot(), args, cmd)
+		selection, err := resolveBranchSelection(AppContext().Runner.RepoRoot(), args, cmd)
 		if err != nil {
 			return err
 		}
@@ -41,6 +42,12 @@ var composeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if selection.IntegrationName != "" && base != "" {
+			return markUsage(fmt.Errorf("saved integration %q already defines base %q; omit --base", selection.IntegrationName, selection.Base))
+		}
+		if base == "" {
+			base = selection.Base
+		}
 		if base == "" {
 			base = AppContext().Config.DefaultBase
 		}
@@ -50,7 +57,7 @@ var composeCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := composer.New(AppContext().Runner).Compose(ctx, dag, selected, base, composeOpts)
+		result, err := composer.New(AppContext().Runner).Compose(ctx, dag, selection.Branches, base, composeOpts)
 		if err != nil {
 			var conflictErr composer.ConflictError
 			if errors.As(err, &conflictErr) {

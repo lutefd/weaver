@@ -12,6 +12,7 @@ import (
 
 func init() {
 	updateCmd.Flags().String("group", "", "update all branches in a named group")
+	updateCmd.Flags().String("integration", "", "update all branches in a saved integration strategy")
 	updateCmd.Flags().Bool("all", false, "update every tracked branch")
 	rootCmd.AddCommand(updateCmd)
 }
@@ -21,12 +22,12 @@ var updateCmd = &cobra.Command{
 	Short: "Fast-forward local branches to their upstream refs",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		selected, err := resolveBranchSelection(AppContext().Runner.RepoRoot(), args, cmd)
+		selection, err := resolveBranchSelection(AppContext().Runner.RepoRoot(), args, cmd)
 		if err != nil {
 			return err
 		}
 
-		result, err := updater.New(AppContext().Runner).Update(ctx, selected)
+		result, err := updater.New(AppContext().Runner).Update(ctx, selection.Branches)
 		if err != nil {
 			var missingBranchErr updater.MissingBranchError
 			if errors.As(err, &missingBranchErr) {

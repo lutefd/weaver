@@ -8,6 +8,7 @@ import (
 
 	"github.com/lutefd/weaver/internal/deps"
 	"github.com/lutefd/weaver/internal/group"
+	weaverintegration "github.com/lutefd/weaver/internal/integration"
 )
 
 func TestExportImportRoundTrip(t *testing.T) {
@@ -24,6 +25,14 @@ func TestExportImportRoundTrip(t *testing.T) {
 		"sprint-42": {"feature-a", "feature-b"},
 	}); err != nil {
 		t.Fatalf("Replace groups error = %v", err)
+	}
+	if err := weaverintegration.NewStore(repoRoot).Replace(map[string]weaverintegration.Recipe{
+		"integration": {
+			Base:     "main",
+			Branches: []string{"feature-a", "feature-b"},
+		},
+	}); err != nil {
+		t.Fatalf("Replace integrations error = %v", err)
 	}
 
 	manager := New(repoRoot)
@@ -68,6 +77,20 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotGroups, wantGroups) {
 		t.Fatalf("groups = %#v, want %#v", gotGroups, wantGroups)
+	}
+
+	gotIntegrations, err := weaverintegration.NewStore(otherRepo).List()
+	if err != nil {
+		t.Fatalf("List() integrations error = %v", err)
+	}
+	wantIntegrations := map[string]weaverintegration.Recipe{
+		"integration": {
+			Base:     "main",
+			Branches: []string{"feature-a", "feature-b"},
+		},
+	}
+	if !reflect.DeepEqual(gotIntegrations, wantIntegrations) {
+		t.Fatalf("integrations = %#v, want %#v", gotIntegrations, wantIntegrations)
 	}
 }
 
