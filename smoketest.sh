@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE="${SMOKETEST_LOG:-$ROOT_DIR/smoketest.log}"
+PRIMARY_REPO="$(mktemp -d "${TMPDIR:-/tmp}/weaver-smoke-primary.XXXXXX")"
+IMPORT_REPO="$(mktemp -d "${TMPDIR:-/tmp}/weaver-smoke-import.XXXXXX")"
+
+cleanup() {
+  rm -rf "$PRIMARY_REPO" "$IMPORT_REPO"
+}
+
+trap cleanup EXIT
+
+mkdir -p "$(dirname "$LOG_FILE")"
+exec > >(tee "$LOG_FILE") 2>&1
+
+run() {
+  echo
+  echo "+ $*"
+  "$@"
+}
+
+run_in() {
+  local dir="$1"
+  shift
+  echo
+  echo "+ (cd $dir && $*)"
+  (
+    cd "$dir"
+    "$@"
+  )
+}
+
+echo "[smoke] root: $ROOT_DIR"
+echo "[smoke] log: $LOG_FILE"
+echo "[smoke] primary repo: $PRIMARY_REPO"
+echo "[smoke] import repo: $IMPORT_REPO"
+
+run make -C "$ROOT_DIR" build
+
+BINARY="$ROOT_DIR/bin/weaver"
+STATE_FILE="$ROOT_DIR/smoketest-state.json"
+rm -f "$STATE_FILE"
+
+run_in "$PRIMARY_REPO" git init -b main
+run_in "$PRIMARY_REPO" git config user.name "Weaver Smoke"
+run_in "$PRIMARY_REPO" git config user.email "smoke@example.com"
+run_in "$PRIMARY_REPO" /bin/sh -c "echo base > README.md"
+run_in "$PRIMARY_REPO" git add README.md
+run_in "$PRIMARY_REPO" git commit -m "init"
+
+run_in "$PRIMARY_REPO" git checkout -b feature-a
+run_in "$PRIMARY_REPO" /bin/sh -c "echo feature-a > feature-a.txt"
+run_in "$PRIMARY_REPO" git add feature-a.txt
+run_in "$PRIMARY_REPO" git commit -m "feature-a"
+
+run_in "$PRIMARY_REPO" git checkout -b feature-b
+run_in "$PRIMARY_REPO" /bin/sh -c "echo feature-b > feature-b.txt"
+run_in "$PRIMARY_REPO" git add feature-b.txt
+run_in "$PRIMARY_REPO" git commit -m "feature-b"
+
+run_in "$PRIMARY_REPO" git checkout -b feature-c
+run_in "$PRIMARY_REPO" /bin/sh -c "echo feature-c > feature-c.txt"
+run_in "$PRIMARY_REPO" git add feature-c.txt
+run_in "$PRIMARY_REPO" git commit -m "feature-c"
+
+run_in "$PRIMARY_REPO" git checkout main
+run_in "$PRIMARY_REPO" /bin/sh -c "echo main-update > main.txt"
+run_in "$PRIMARY_REPO" git add main.txt
+run_in "$PRIMARY_REPO" git commit -m "main-update"
+
+run_in "$PRIMARY_REPO" "$BINARY" init
+run_in "$PRIMARY_REPO" "$BINARY" version
+run_in "$PRIMARY_REPO" "$BINARY" stack feature-b --on feature-a
+run_in "$PRIMARY_REPO" "$BINARY" stack feature-c --on feature-b
+run_in "$PRIMARY_REPO" "$BINARY" deps feature-c
+run_in "$PRIMARY_REPO" "$BINARY" status
+
+run_in "$PRIMARY_REPO" "$BINARY" group create sprint-42 feature-a feature-c
+run_in "$PRIMARY_REPO" "$BINARY" group add sprint-42 feature-b
+run_in "$PRIMARY_REPO" "$BINARY" group list
+run_in "$PRIMARY_REPO" "$BINARY" group remove sprint-42 feature-c
+run_in "$PRIMARY_REPO" "$BINARY" group list
+
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42 --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose --all --dry-run
+
+run_in "$PRIMARY_REPO" git checkout feature-c
+run_in "$PRIMARY_REPO" "$BINARY" sync feature-c
+if [[ -f "$PRIMARY_REPO/.git/weaver/rebase-state.yaml" ]]; then
+  echo "[smoke] expected rebase state to be cleared"
+  exit 1
+fi
+run_in "$PRIMARY_REPO" "$BINARY" status
+
+run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42
+run_in "$PRIMARY_REPO" git branch --show-current
+
+run_in "$PRIMARY_REPO" /bin/sh -c "\"$BINARY\" export > \"$STATE_FILE\""
+run_in "$PRIMARY_REPO" cat "$STATE_FILE"
+
+run_in "$IMPORT_REPO" git init -b main
+run_in "$IMPORT_REPO" git config user.name "Weaver Smoke"
+run_in "$IMPORT_REPO" git config user.email "smoke@example.com"
+run_in "$IMPORT_REPO" /bin/sh -c "echo imported > README.md"
+run_in "$IMPORT_REPO" git add README.md
+run_in "$IMPORT_REPO" git commit -m "init"
+run_in "$IMPORT_REPO" "$BINARY" init
+run_in "$IMPORT_REPO" "$BINARY" import "$STATE_FILE"
+run_in "$IMPORT_REPO" "$BINARY" deps feature-c
+run_in "$IMPORT_REPO" "$BINARY" group list
+
+rm -f "$STATE_FILE"
+
+echo
+echo "[smoke] success"
+echo "[smoke] temp repos cleaned on exit"
