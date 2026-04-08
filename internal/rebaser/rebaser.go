@@ -61,6 +61,11 @@ func (r *SafeRebaser) RebaseStack(ctx context.Context, dag *stack.DAG, branches 
 		BaseBranch:     base,
 		AllBranches:    targets,
 	}
+	originalTips, err := branchTips(ctx, r.runner, targets)
+	if err != nil {
+		return nil, err
+	}
+	state.OriginalTips = originalTips
 	if err := r.store.Save(state); err != nil {
 		return nil, err
 	}
@@ -148,7 +153,11 @@ func (r *SafeRebaser) runFrom(ctx context.Context, state *State, start int, cont
 		if _, err := r.runner.Run(ctx, "checkout", branch); err != nil {
 			return nil, err
 		}
-		if _, err := r.runner.Run(ctx, "rebase", "--autostash", onto); err != nil {
+		rebaseArgs, err := rebaseArgsForIndex(state, idx, onto)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := r.runner.Run(ctx, rebaseArgs...); err != nil {
 			return &RebaseResult{
 				OriginalBranch: state.OriginalBranch,
 				Completed:      append([]string(nil), completed...),
@@ -200,4 +209,33 @@ func resolveTargets(dag *stack.DAG, branch, base string) ([]string, error) {
 
 func isNoRebaseInProgress(err error) bool {
 	return strings.Contains(err.Error(), "No rebase in progress")
+}
+
+func branchTips(ctx context.Context, runner gitrunner.Runner, branches []string) (map[string]string, error) {
+	tips := make(map[string]string, len(branches))
+	for _, branch := range branches {
+		result, err := runner.Run(ctx, "rev-parse", branch)
+		if err != nil {
+			return nil, fmt.Errorf("resolve branch tip for %s: %w", branch, err)
+		}
+		if result.Stdout == "" {
+			return nil, fmt.Errorf("resolve branch tip for %s: empty revision", branch)
+		}
+		tips[branch] = result.Stdout
+	}
+	return tips, nil
+}
+
+func rebaseArgsForIndex(state *State, idx int, onto string) ([]string, error) {
+	if idx == 0 {
+		return []string{"rebase", "--autostash", onto}, nil
+	}
+
+	parentBranch := state.AllBranches[idx-1]
+	parentTip := state.OriginalTips[parentBranch]
+	if parentTip == "" {
+		return nil, fmt.Errorf("missing original tip for %s", parentBranch)
+	}
+
+	return []string{"rebase", "--autostash", "--onto", onto, parentTip}, nil
 }

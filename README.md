@@ -124,6 +124,12 @@ Run unit tests:
 go test ./...
 ```
 
+Run integration tests against real temporary repositories:
+
+```bash
+make test-integration
+```
+
 Run the end-to-end smoke test:
 
 ```bash

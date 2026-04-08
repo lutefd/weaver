@@ -21,6 +21,9 @@ func TestSafeRebaserRebaseStack(t *testing.T) {
 			repoRoot: repoRoot,
 			results: map[string]gitrunner.Result{
 				"branch --show-current": {Stdout: "feature-c"},
+				"rev-parse feature-a":   {Stdout: "sha-a"},
+				"rev-parse feature-b":   {Stdout: "sha-b"},
+				"rev-parse feature-c":   {Stdout: "sha-c"},
 			},
 		},
 		store: NewStateStore(repoRoot),
@@ -53,12 +56,15 @@ func TestSafeRebaserRebaseStack(t *testing.T) {
 	calls := rebaser.runner.(*recordingRunner).calls
 	wantCalls := []string{
 		"branch --show-current",
+		"rev-parse feature-a",
+		"rev-parse feature-b",
+		"rev-parse feature-c",
 		"checkout feature-a",
 		"rebase --autostash main",
 		"checkout feature-b",
-		"rebase --autostash feature-a",
+		"rebase --autostash --onto feature-a sha-a",
 		"checkout feature-c",
-		"rebase --autostash feature-b",
+		"rebase --autostash --onto feature-b sha-b",
 		"checkout feature-c",
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
@@ -73,11 +79,14 @@ func TestSafeRebaserConflictPersistsState(t *testing.T) {
 	runner := &recordingRunner{
 		repoRoot: repoRoot,
 		results: map[string]gitrunner.Result{
-			"branch --show-current":        {Stdout: "feature-c"},
-			"rebase --autostash feature-a": {ExitCode: 1},
+			"branch --show-current":                     {Stdout: "feature-c"},
+			"rev-parse feature-a":                       {Stdout: "sha-a"},
+			"rev-parse feature-b":                       {Stdout: "sha-b"},
+			"rev-parse feature-c":                       {Stdout: "sha-c"},
+			"rebase --autostash --onto feature-a sha-a": {ExitCode: 1},
 		},
 		errs: map[string]error{
-			"rebase --autostash feature-a": errors.New("exit status 1"),
+			"rebase --autostash --onto feature-a sha-a": errors.New("exit status 1"),
 		},
 	}
 	rebaser := &SafeRebaser{runner: runner, store: NewStateStore(repoRoot)}
@@ -108,6 +117,9 @@ func TestSafeRebaserConflictPersistsState(t *testing.T) {
 	if state.Current != "feature-b" || state.CurrentOnto != "feature-a" {
 		t.Fatalf("state current = %s onto %s, want feature-b onto feature-a", state.Current, state.CurrentOnto)
 	}
+	if state.OriginalTips["feature-a"] != "sha-a" {
+		t.Fatalf("feature-a original tip = %q, want sha-a", state.OriginalTips["feature-a"])
+	}
 }
 
 func TestSafeRebaserContinue(t *testing.T) {
@@ -119,9 +131,14 @@ func TestSafeRebaserContinue(t *testing.T) {
 		OriginalBranch: "feature-c",
 		BaseBranch:     "main",
 		AllBranches:    []string{"feature-a", "feature-b", "feature-c"},
-		Completed:      []string{"feature-a"},
-		Current:        "feature-b",
-		CurrentOnto:    "feature-a",
+		OriginalTips: map[string]string{
+			"feature-a": "sha-a",
+			"feature-b": "sha-b",
+			"feature-c": "sha-c",
+		},
+		Completed:   []string{"feature-a"},
+		Current:     "feature-b",
+		CurrentOnto: "feature-a",
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -143,6 +160,15 @@ func TestSafeRebaserContinue(t *testing.T) {
 	}
 	if store.HasPending() {
 		t.Fatal("HasPending() = true, want false")
+	}
+	wantCalls := []string{
+		"rebase --continue",
+		"checkout feature-c",
+		"rebase --autostash --onto feature-b sha-b",
+		"checkout feature-c",
+	}
+	if !reflect.DeepEqual(runner.calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, wantCalls)
 	}
 }
 

@@ -1,6 +1,6 @@
 APP := weaver
 
-.PHONY: build test install fmt
+.PHONY: build test test-integration install fmt
 
 build:
 	mkdir -p bin
@@ -8,6 +8,9 @@ build:
 
 test:
 	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
 
 install:
 	go install .

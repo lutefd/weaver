@@ -8,7 +8,7 @@ Weaver is built around a few constraints:
 - Git-native: Git remains the execution engine.
 - Offline-friendly: the workflow must not depend on GitHub.
 - Crash-safe: multi-step rebase operations persist progress.
-- Disposable integration: compose operations must not leave behind a synthetic branch.
+- Safe integration by default: compose should stay ephemeral unless the user explicitly requests `--persist` or `--create`.
 - Remote refresh: upstream-tracking updates should be explicit and fast-forward only.
 
 ## Layout

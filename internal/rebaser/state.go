@@ -13,14 +13,15 @@ import (
 const stateFileName = "rebase-state.yaml"
 
 type State struct {
-	Version        int       `yaml:"version"`
-	StartedAt      time.Time `yaml:"started_at"`
-	OriginalBranch string    `yaml:"original_branch"`
-	BaseBranch     string    `yaml:"base_branch"`
-	AllBranches    []string  `yaml:"all_branches"`
-	Completed      []string  `yaml:"completed"`
-	Current        string    `yaml:"current"`
-	CurrentOnto    string    `yaml:"current_onto"`
+	Version        int               `yaml:"version"`
+	StartedAt      time.Time         `yaml:"started_at"`
+	OriginalBranch string            `yaml:"original_branch"`
+	BaseBranch     string            `yaml:"base_branch"`
+	AllBranches    []string          `yaml:"all_branches"`
+	OriginalTips   map[string]string `yaml:"original_tips,omitempty"`
+	Completed      []string          `yaml:"completed"`
+	Current        string            `yaml:"current"`
+	CurrentOnto    string            `yaml:"current_onto"`
 }
 
 type StateStore struct {

@@ -143,9 +143,6 @@ func resolveComposeOrder(dag *stack.DAG, branches []string, base string) ([]stri
 	}
 	for _, dep := range dag.Dependencies() {
 		if dep.Parent == base {
-			if _, ok := inDegree[dep.Branch]; ok {
-				inDegree[dep.Branch]++
-			}
 			continue
 		}
 		if _, childIncluded := inDegree[dep.Branch]; !childIncluded {
