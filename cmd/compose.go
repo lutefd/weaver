@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/deps"
 	"github.com/lutefd/weaver/internal/resolver"
+	"github.com/lutefd/weaver/internal/stack"
 	"github.com/spf13/cobra"
 )
 
@@ -58,24 +61,17 @@ var composeCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := composer.New(AppContext().Runner).Compose(ctx, dag, selection.Branches, base, composeOpts)
+		result, err := runComposeWithRecovery(ctx, cmd, dag, selection.Branches, base, composeOpts)
 		if err != nil {
-			var conflictErr composer.ConflictError
-			if errors.As(err, &conflictErr) {
-				if len(conflictErr.Files) > 0 {
-					return fmt.Errorf("compose failed while merging %s (conflicts: %s)", conflictErr.Branch, strings.Join(conflictErr.Files, ", "))
-				}
-				return fmt.Errorf("compose failed while merging %s", conflictErr.Branch)
-			}
 			return err
 		}
 
 		if result.DryRun {
 			switch {
 			case result.CreatedBranch != "":
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose on %s and create %s: %s\n", result.BaseBranch, result.CreatedBranch, strings.Join(result.Order, " -> "))
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose on %s and create %s: %s%s\n", result.BaseBranch, result.CreatedBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			case result.UpdatedBranch != "":
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose on %s and update %s: %s\n", result.BaseBranch, result.UpdatedBranch, strings.Join(result.Order, " -> "))
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose on %s and update %s: %s%s\n", result.BaseBranch, result.UpdatedBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			default:
 				fmt.Fprintf(cmd.OutOrStdout(), "dry-run ephemeral compose on %s: %s%s\n", result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			}
@@ -84,15 +80,18 @@ var composeCmd = &cobra.Command{
 
 		if result.CreatedBranch != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "created %s from %s with: %s%s\n", result.CreatedBranch, result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
+			renderManualMergeSummary(cmd.OutOrStdout(), result)
 			return nil
 		}
 
 		if result.UpdatedBranch != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "updated %s from %s with: %s%s\n", result.UpdatedBranch, result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
+			renderManualMergeSummary(cmd.OutOrStdout(), result)
 			return nil
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "composed ephemerally on %s: %s%s\n", result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
+		renderManualMergeSummary(cmd.OutOrStdout(), result)
 		return nil
 	},
 }
@@ -144,4 +143,92 @@ func formatSkipped(skipped []string) string {
 		return ""
 	}
 	return fmt.Sprintf(" (skipped: %s)", strings.Join(skipped, ", "))
+}
+
+func runComposeWithRecovery(ctx context.Context, cmd *cobra.Command, dag *stack.DAG, branches []string, base string, opts composer.ComposeOpts) (*composer.ComposeResult, error) {
+	engine := composer.New(AppContext().Runner)
+	for {
+		result, err := engine.Compose(ctx, dag, branches, base, opts)
+		if err == nil {
+			return result, nil
+		}
+
+		var conflictErr composer.ConflictError
+		if !errors.As(err, &conflictErr) {
+			return nil, err
+		}
+		if opts.DryRun {
+			return nil, formatComposeConflictError(conflictErr)
+		}
+
+		shouldSkip, promptErr := promptSkipOnComposeConflict(cmd, conflictErr)
+		if promptErr != nil {
+			return nil, promptErr
+		}
+		if !shouldSkip {
+			return nil, formatComposeConflictError(conflictErr)
+		}
+
+		opts.SkipBranches = appendUniqueBranch(opts.SkipBranches, conflictErr.Branch)
+		fmt.Fprintf(cmd.OutOrStdout(), "skipping %s and retrying compose; merge it manually later\n", conflictErr.Branch)
+	}
+}
+
+func formatComposeConflictError(conflictErr composer.ConflictError) error {
+	if len(conflictErr.Files) > 0 {
+		return fmt.Errorf("compose failed while merging %s (conflicts: %s)", conflictErr.Branch, strings.Join(conflictErr.Files, ", "))
+	}
+	return fmt.Errorf("compose failed while merging %s", conflictErr.Branch)
+}
+
+func promptSkipOnComposeConflict(cmd *cobra.Command, conflictErr composer.ConflictError) (bool, error) {
+	reader := bufio.NewReader(cmd.InOrStdin())
+	for {
+		if len(conflictErr.Files) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "compose conflict while merging %s; conflicted files: %s\n", conflictErr.Branch, strings.Join(conflictErr.Files, ", "))
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "compose conflict while merging %s\n", conflictErr.Branch)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "skip %s and continue, or abort? [skip/abort]: ", conflictErr.Branch)
+
+		answer, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, err
+		}
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		switch answer {
+		case "skip", "s":
+			return true, nil
+		case "abort", "a", "":
+			return false, nil
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "please answer skip or abort\n")
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+	}
+}
+
+func renderManualMergeSummary(w io.Writer, result *composer.ComposeResult) {
+	if result == nil || len(result.Skipped) == 0 {
+		return
+	}
+
+	switch {
+	case result.CreatedBranch != "":
+		fmt.Fprintf(w, "manual merge required onto %s: %s\n", result.CreatedBranch, strings.Join(result.Skipped, ", "))
+	case result.UpdatedBranch != "":
+		fmt.Fprintf(w, "manual merge required onto %s: %s\n", result.UpdatedBranch, strings.Join(result.Skipped, ", "))
+	default:
+		fmt.Fprintf(w, "manual merge still required for skipped branches: %s\n", strings.Join(result.Skipped, ", "))
+	}
+}
+
+func appendUniqueBranch(branches []string, next string) []string {
+	for _, branch := range branches {
+		if branch == next {
+			return branches
+		}
+	}
+	return append(branches, next)
 }

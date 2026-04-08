@@ -10,10 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/config"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
+	"github.com/lutefd/weaver/internal/stack"
 	"github.com/spf13/cobra"
 )
 
@@ -235,6 +237,95 @@ func TestResolveComposeOptions(t *testing.T) {
 	}
 }
 
+func TestPromptSkipOnComposeConflict(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetIn(bytes.NewBufferString("skip\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	skip, err := promptSkipOnComposeConflict(cmd, composer.ConflictError{
+		Branch: "feature-b",
+		Files:  []string{"app/service.go"},
+		Err:    errors.New("exit status 1"),
+	})
+	if err != nil {
+		t.Fatalf("promptSkipOnComposeConflict() error = %v", err)
+	}
+	if !skip {
+		t.Fatal("promptSkipOnComposeConflict() = false, want true")
+	}
+	if !strings.Contains(out.String(), "app/service.go") {
+		t.Fatalf("prompt output = %q, want conflicted file", out.String())
+	}
+}
+
+func TestRunComposeWithRecoverySkipsAndRetries(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &interactiveComposeRunner{
+		results: map[string]gitrunner.Result{
+			"branch --show-current":            {Stdout: "topic"},
+			"diff --name-only --diff-filter=U": {Stdout: "app/service.go"},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetIn(bytes.NewBufferString("skip\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	result, err := runComposeWithRecovery(context.Background(), cmd, dag, []string{"feature-c"}, "main", composer.ComposeOpts{CreateBranch: "integration"})
+	if err != nil {
+		t.Fatalf("runComposeWithRecovery() error = %v", err)
+	}
+	if got := strings.Join(result.Skipped, ","); got != "feature-b" {
+		t.Fatalf("Skipped = %q, want feature-b", got)
+	}
+	if !strings.Contains(out.String(), "skipping feature-b and retrying compose") {
+		t.Fatalf("output = %q, want retry message", out.String())
+	}
+}
+
+func TestRunComposeWithRecoveryAbort(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &interactiveComposeRunner{
+		results: map[string]gitrunner.Result{
+			"branch --show-current":            {Stdout: "topic"},
+			"diff --name-only --diff-filter=U": {Stdout: "app/service.go"},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetIn(bytes.NewBufferString("abort\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	_, err = runComposeWithRecovery(context.Background(), cmd, dag, []string{"feature-c"}, "main", composer.ComposeOpts{UpdateBranch: "integration"})
+	if err == nil {
+		t.Fatal("runComposeWithRecovery() error = nil, want conflict")
+	}
+	if !strings.Contains(err.Error(), "compose failed while merging feature-b") {
+		t.Fatalf("error = %v, want conflict branch", err)
+	}
+}
+
 func TestExportAndImportCommands(t *testing.T) {
 	repoRoot := t.TempDir()
 	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
@@ -412,6 +503,33 @@ func (r *staticRunner) Run(_ context.Context, _ ...string) (gitrunner.Result, er
 }
 
 func (r *staticRunner) RepoRoot() string {
+	return r.repoRoot
+}
+
+type interactiveComposeRunner struct {
+	repoRoot string
+	results  map[string]gitrunner.Result
+	calls    []string
+}
+
+func (r *interactiveComposeRunner) Run(_ context.Context, args ...string) (gitrunner.Result, error) {
+	key := strings.Join(args, " ")
+	r.calls = append(r.calls, key)
+	if result, ok := r.results[key]; ok {
+		return result, nil
+	}
+
+	switch key {
+	case "merge --no-ff --no-edit feature-b":
+		return gitrunner.Result{ExitCode: 1}, errors.New("exit status 1")
+	case "branch integration HEAD", "branch -f integration HEAD":
+		return gitrunner.Result{}, nil
+	}
+
+	return gitrunner.Result{}, nil
+}
+
+func (r *interactiveComposeRunner) RepoRoot() string {
 	return r.repoRoot
 }
 
