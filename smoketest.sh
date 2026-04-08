@@ -6,9 +6,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${SMOKETEST_LOG:-$ROOT_DIR/smoketest.log}"
 PRIMARY_REPO="$(mktemp -d "${TMPDIR:-/tmp}/weaver-smoke-primary.XXXXXX")"
 IMPORT_REPO="$(mktemp -d "${TMPDIR:-/tmp}/weaver-smoke-import.XXXXXX")"
+REMOTE_REPO="$(mktemp -d "${TMPDIR:-/tmp}/weaver-smoke-remote.XXXXXX")"
+PUBLISH_REPO="$(mktemp -d "${TMPDIR:-/tmp}/weaver-smoke-publish.XXXXXX")"
 
 cleanup() {
-  rm -rf "$PRIMARY_REPO" "$IMPORT_REPO"
+  rm -rf "$PRIMARY_REPO" "$IMPORT_REPO" "$REMOTE_REPO" "$PUBLISH_REPO"
 }
 
 trap cleanup EXIT
@@ -37,6 +39,8 @@ echo "[smoke] root: $ROOT_DIR"
 echo "[smoke] log: $LOG_FILE"
 echo "[smoke] primary repo: $PRIMARY_REPO"
 echo "[smoke] import repo: $IMPORT_REPO"
+echo "[smoke] remote repo: $REMOTE_REPO"
+echo "[smoke] publish repo: $PUBLISH_REPO"
 
 run make -C "$ROOT_DIR" build
 
@@ -72,11 +76,46 @@ run_in "$PRIMARY_REPO" git add main.txt
 run_in "$PRIMARY_REPO" git commit -m "main-update"
 run_in "$PRIMARY_REPO" git branch integration
 
+run git init --bare "$REMOTE_REPO"
+run_in "$PRIMARY_REPO" git remote add origin "$REMOTE_REPO"
+run_in "$PRIMARY_REPO" git push -u origin main
+run_in "$PRIMARY_REPO" git push -u origin feature-a
+run_in "$PRIMARY_REPO" git push -u origin feature-b
+run_in "$PRIMARY_REPO" git push -u origin feature-c
+run_in "$PRIMARY_REPO" git push -u origin integration
+run_in "$REMOTE_REPO" git symbolic-ref HEAD refs/heads/main
+run git clone "$REMOTE_REPO" "$PUBLISH_REPO"
+run_in "$PUBLISH_REPO" git config user.name "Weaver Smoke"
+run_in "$PUBLISH_REPO" git config user.email "smoke@example.com"
+run_in "$PUBLISH_REPO" git checkout main
+run_in "$PUBLISH_REPO" /bin/sh -c "echo remote-main > remote-main.txt"
+run_in "$PUBLISH_REPO" git add remote-main.txt
+run_in "$PUBLISH_REPO" git commit -m "remote-main"
+run_in "$PUBLISH_REPO" git push origin main
+run_in "$PUBLISH_REPO" git checkout feature-a
+run_in "$PUBLISH_REPO" /bin/sh -c "echo remote-feature-a >> feature-a.txt"
+run_in "$PUBLISH_REPO" git add feature-a.txt
+run_in "$PUBLISH_REPO" git commit -m "remote-feature-a"
+run_in "$PUBLISH_REPO" git push origin feature-a
+
 run_in "$PRIMARY_REPO" "$BINARY" init
 run_in "$PRIMARY_REPO" "$BINARY" version
 run_in "$PRIMARY_REPO" "$BINARY" stack feature-b --on feature-a
 run_in "$PRIMARY_REPO" "$BINARY" stack feature-c --on feature-b
 run_in "$PRIMARY_REPO" "$BINARY" deps feature-c
+run_in "$PRIMARY_REPO" "$BINARY" update main feature-a
+main_rev="$(cd "$PRIMARY_REPO" && git rev-parse main)"
+origin_main_rev="$(cd "$PRIMARY_REPO" && git rev-parse origin/main)"
+feature_a_rev="$(cd "$PRIMARY_REPO" && git rev-parse feature-a)"
+origin_feature_a_rev="$(cd "$PRIMARY_REPO" && git rev-parse origin/feature-a)"
+if [[ "$main_rev" != "$origin_main_rev" ]]; then
+  echo "[smoke] expected main to match origin/main after update"
+  exit 1
+fi
+if [[ "$feature_a_rev" != "$origin_feature_a_rev" ]]; then
+  echo "[smoke] expected feature-a to match origin/feature-a after update"
+  exit 1
+fi
 run_in "$PRIMARY_REPO" "$BINARY" status
 
 run_in "$PRIMARY_REPO" "$BINARY" group create sprint-42 feature-a feature-c

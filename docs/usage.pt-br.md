@@ -83,6 +83,28 @@ Estados possíveis:
 - `needs rebase`
 - `conflict risk`
 
+## Atualizar Branches Locais a Partir do Upstream
+
+Atualize branches explícitas:
+
+```bash
+./bin/weaver update main feature-a feature-b
+```
+
+Atualize todas as branches rastreadas:
+
+```bash
+./bin/weaver update --all
+```
+
+Atualize um grupo nomeado:
+
+```bash
+./bin/weaver update --group sprint-42
+```
+
+`weaver update` roda `git fetch --all` uma vez e depois faz fast-forward de cada branch local selecionada até o upstream configurado. O comando para se uma branch não tiver upstream ou não puder receber fast-forward.
+
 ## Rebase de um Stack
 
 Faça rebase de todo o stack até `feature-c`:

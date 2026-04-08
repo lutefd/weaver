@@ -9,6 +9,7 @@ It stores stack relationships in `.git/weaver/`, keeps them out of the committed
 - Declares branch dependencies locally with `weaver stack`.
 - Resolves stacks as a DAG built from `.git/weaver/deps.yaml`.
 - Shows stack structure and health with `weaver deps` and `weaver status`.
+- Fetches upstream refs and fast-forwards local branches with `weaver update`.
 - Rebases a stack in dependency order with crash-safe resume state.
 - Composes multiple branches into an ephemeral integration state.
 - Manages named compose groups in `.git/weaver/groups.yaml`.
@@ -23,6 +24,7 @@ weaver stack <branch> --on <parent>
 weaver unstack <branch>
 weaver deps [branch]
 weaver status
+weaver update [branch...] [--group NAME | --all]
 weaver sync [branch]
 weaver continue
 weaver abort
@@ -63,6 +65,13 @@ Inspect it:
 ./bin/weaver status
 ```
 
+Refresh local branches from upstream:
+
+```bash
+./bin/weaver update main feature-a feature-b
+./bin/weaver update --all
+```
+
 Rebase it:
 
 ```bash
@@ -92,6 +101,7 @@ None of the `.git/weaver/` files are intended to be committed.
 ## Safety Model
 
 - Rebase operations use `git rebase --autostash`.
+- `weaver update` runs `git fetch --all` and fast-forwards selected local branches to their upstream refs.
 - Mutating Git commands are printed before execution.
 - Rebase state is persisted before each step.
 - `weaver abort` restores the original branch.

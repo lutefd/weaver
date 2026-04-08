@@ -51,7 +51,7 @@ func TestGroupCommands(t *testing.T) {
 	}
 }
 
-func TestResolveComposeBranches(t *testing.T) {
+func TestResolveBranchSelection(t *testing.T) {
 	repoRoot := t.TempDir()
 	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
 
@@ -61,12 +61,12 @@ func TestResolveComposeBranches(t *testing.T) {
 
 	cmd := cloneComposeCommand()
 	cmd.Flags().Set("group", "sprint-42")
-	branches, err := resolveComposeBranches(repoRoot, nil, cmd)
+	branches, err := resolveBranchSelection(repoRoot, nil, cmd)
 	if err != nil {
-		t.Fatalf("resolveComposeBranches() error = %v", err)
+		t.Fatalf("resolveBranchSelection() error = %v", err)
 	}
 	if got := strings.Join(branches, ","); got != "feature-a,feature-b" {
-		t.Fatalf("resolveComposeBranches() = %q", got)
+		t.Fatalf("resolveBranchSelection() = %q", got)
 	}
 
 	cmd = cloneComposeCommand()
@@ -74,9 +74,23 @@ func TestResolveComposeBranches(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoRoot, ".git", "weaver", "deps.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("deps file should not exist yet")
 	}
-	_, err = resolveComposeBranches(repoRoot, nil, cmd)
+	_, err = resolveBranchSelection(repoRoot, nil, cmd)
 	if err == nil {
-		t.Fatal("resolveComposeBranches() error = nil, want error")
+		t.Fatal("resolveBranchSelection() error = nil, want error")
+	}
+}
+
+func TestResolveBranchSelectionExplicitArgs(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	cmd := cloneUpdateCommand()
+	branches, err := resolveBranchSelection(repoRoot, []string{"main", "feature-a"}, cmd)
+	if err != nil {
+		t.Fatalf("resolveBranchSelection() error = %v", err)
+	}
+	if got := strings.Join(branches, ","); got != "main,feature-a" {
+		t.Fatalf("resolveBranchSelection() = %q", got)
 	}
 }
 
@@ -181,6 +195,13 @@ func cloneComposeCommand() *cobra.Command {
 	cmd.Flags().String("create", "", "create")
 	cmd.Flags().Bool("dry-run", false, "dry-run")
 	cmd.Flags().Bool("persist", false, "persist")
+	return cmd
+}
+
+func cloneUpdateCommand() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("group", "", "group")
+	cmd.Flags().Bool("all", false, "all")
 	return cmd
 }
 

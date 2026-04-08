@@ -83,6 +83,28 @@ Possible health labels:
 - `needs rebase`
 - `conflict risk`
 
+## Update Local Branches From Upstream
+
+Update explicit branches:
+
+```bash
+./bin/weaver update main feature-a feature-b
+```
+
+Update every tracked branch:
+
+```bash
+./bin/weaver update --all
+```
+
+Update a named group:
+
+```bash
+./bin/weaver update --group sprint-42
+```
+
+`weaver update` runs `git fetch --all`, then fast-forwards each selected local branch to its configured upstream ref. It stops if a branch has no upstream or cannot be fast-forwarded.
+
 ## Rebase a Stack
 
 Rebase the full stack that leads to `feature-c`:

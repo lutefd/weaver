@@ -1,6 +1,6 @@
 ---
 name: weaver
-description: Use when a user wants to inspect, declare, rebase, compose, export, or import local Git branch stacks with the installed `weaver` CLI. Prefer this skill over raw `git` for stack-aware operations such as `stack`, `deps`, `status`, `sync`, `compose`, `group`, `export`, and `import`.
+description: Use when a user wants to inspect, declare, refresh, rebase, compose, export, or import local Git branch stacks with the installed `weaver` CLI. Prefer this skill over raw `git` for stack-aware operations such as `stack`, `deps`, `status`, `update`, `sync`, `compose`, `group`, `export`, and `import`.
 ---
 
 # Weaver
@@ -24,6 +24,7 @@ If `weaver` is missing, stop and tell the user it is not installed instead of gu
 - Declaring or changing stack relationships
 - Showing stack chains or trees
 - Checking stack health
+- Refreshing local branches from their upstream refs
 - Rebasing an entire stack
 - Resuming or aborting a paused stack rebase
 - Creating and using compose groups
@@ -43,6 +44,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 
 ### Rebase a stack
 
+- Use `weaver update ...` when the user wants to fetch remotes and fast-forward local branches to their upstream refs before any stack rebase.
 - Start with `weaver status` if the user wants to understand risk first.
 - Use `weaver sync [branch]` for the actual ordered rebase.
 - If a rebase pauses on conflicts, use `weaver continue` after resolution or `weaver abort` to restore the original branch.

@@ -23,6 +23,9 @@ weaver status
 ## Rebase
 
 ```bash
+weaver update main feature-a feature-b
+weaver update --group sprint-42
+weaver update --all
 weaver sync
 weaver sync feature-c
 weaver continue

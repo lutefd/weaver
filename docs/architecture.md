@@ -9,6 +9,7 @@ Weaver is built around a few constraints:
 - Offline-friendly: the workflow must not depend on GitHub.
 - Crash-safe: multi-step rebase operations persist progress.
 - Disposable integration: compose operations must not leave behind a synthetic branch.
+- Remote refresh: upstream-tracking updates should be explicit and fast-forward only.
 
 ## Layout
 
@@ -19,6 +20,7 @@ weaver/
 ├── internal/git/         # Git runner and parsers
 ├── internal/deps/        # Local dependency storage
 ├── internal/stack/       # DAG model and health checks
+├── internal/updater/     # Remote-aware branch fast-forward engine
 ├── internal/resolver/    # DAG construction from dependency sources
 ├── internal/rebaser/     # Ordered stack rebase + persisted resume state
 ├── internal/composer/    # Ephemeral multi-branch compose engine
@@ -78,6 +80,24 @@ Key properties:
 - every rebase uses `--autostash`
 - the original branch is restored after success or abort
 - mutating Git commands are printed before execution
+
+## Update Engine
+
+`weaver update` accepts:
+
+- explicit branches
+- a named group via `--group`
+- every tracked branch via `--all`
+
+The engine:
+
+1. Resolves the selected local branches.
+2. Runs `git fetch --all` once.
+3. Resolves each branch's configured upstream ref.
+4. Checks out each branch in turn and fast-forwards it with `git merge --ff-only <upstream>`.
+5. Restores the original branch.
+
+If a branch has no upstream, does not exist locally, or cannot be fast-forwarded, the update stops and the original branch is restored.
 
 ## Compose Engine
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/deps"
-	"github.com/lutefd/weaver/internal/group"
 	"github.com/lutefd/weaver/internal/resolver"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +27,7 @@ var composeCmd = &cobra.Command{
 	Short: "Compose one or more branches into an integration state",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		selected, err := resolveComposeBranches(AppContext().Runner.RepoRoot(), args, cmd)
+		selected, err := resolveBranchSelection(AppContext().Runner.RepoRoot(), args, cmd)
 		if err != nil {
 			return err
 		}
@@ -112,60 +111,4 @@ func resolveComposeOptions(cmd *cobra.Command, base string) (composer.ComposeOpt
 		Persist:      persist,
 		CreateBranch: createBranch,
 	}, nil
-}
-
-func resolveComposeBranches(repoRoot string, args []string, cmd *cobra.Command) ([]string, error) {
-	groupName, err := cmd.Flags().GetString("group")
-	if err != nil {
-		return nil, err
-	}
-	all, err := cmd.Flags().GetBool("all")
-	if err != nil {
-		return nil, err
-	}
-
-	selectedModes := 0
-	if len(args) > 0 {
-		selectedModes++
-	}
-	if groupName != "" {
-		selectedModes++
-	}
-	if all {
-		selectedModes++
-	}
-	if selectedModes != 1 {
-		return nil, markUsage(fmt.Errorf("provide explicit branches, --group, or --all"))
-	}
-
-	if len(args) > 0 {
-		return append([]string(nil), args...), nil
-	}
-	if groupName != "" {
-		branches, ok, err := group.NewStore(repoRoot).Get(groupName)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("group %q does not exist", groupName)
-		}
-		if len(branches) == 0 {
-			return nil, fmt.Errorf("group %q is empty", groupName)
-		}
-		return branches, nil
-	}
-
-	dependencies, err := deps.NewLocalSource(repoRoot).Load(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	if len(dependencies) == 0 {
-		return nil, fmt.Errorf("no tracked branches found")
-	}
-
-	branches := make([]string, 0, len(dependencies))
-	for _, dependency := range dependencies {
-		branches = append(branches, dependency.Branch)
-	}
-	return branches, nil
 }
