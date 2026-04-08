@@ -1,0 +1,4 @@
+interface:
+  display_name: "Weaver"
+  short_description: "Operate local Git branch stacks"
+  default_prompt: "Use $weaver to manage this repository's stacked branches with the installed weaver CLI."
