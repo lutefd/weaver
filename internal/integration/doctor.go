@@ -352,12 +352,21 @@ func (a *Analyzer) findSharedForeignCommit(ctx context.Context, dag *stack.DAG, 
 		return "", "", nil
 	}
 
+	branchFirstParent, err := a.firstParentSet(ctx, branch)
+	if err != nil {
+		return "", "", err
+	}
+
 	for _, other := range order {
 		if other == branch {
 			continue
 		}
 		if relatedInDAG(dag, branch, other) {
 			continue
+		}
+		otherFirstParent, err := a.firstParentSet(ctx, other)
+		if err != nil {
+			return "", "", err
 		}
 		for _, commit := range commits {
 			safe, err := a.isAncestorOfAny(ctx, commit, []string{base, parent})
@@ -373,6 +382,20 @@ func (a *Analyzer) findSharedForeignCommit(ctx context.Context, dag *stack.DAG, 
 					continue
 				}
 				return "", "", err
+			}
+			_, branchOwns := branchFirstParent[commit]
+			_, otherOwns := otherFirstParent[commit]
+			// If the commit is on this branch's first-parent chain but not on the
+			// other branch's first-parent chain, the other branch likely merged this
+			// branch and should carry the foreign-ancestry warning instead.
+			if branchOwns && !otherOwns {
+				continue
+			}
+			// If neither branch carries the commit on its first-parent chain, both
+			// branches received it through merges. That is better diagnosed via the
+			// merge ancestry checks rather than blamed symmetrically here.
+			if !branchOwns && !otherOwns {
+				continue
 			}
 			return commit, other, nil
 		}
@@ -390,6 +413,19 @@ func (a *Analyzer) branchRange(ctx context.Context, parent, branch string) ([]st
 		return nil, nil
 	}
 	return strings.Fields(result.Stdout), nil
+}
+
+func (a *Analyzer) firstParentSet(ctx context.Context, branch string) (map[string]struct{}, error) {
+	result, err := a.runner.Run(ctx, "rev-list", "--first-parent", branch)
+	if err != nil {
+		return nil, err
+	}
+	commits := strings.Fields(result.Stdout)
+	set := make(map[string]struct{}, len(commits))
+	for _, commit := range commits {
+		set[commit] = struct{}{}
+	}
+	return set, nil
 }
 
 func relatedInDAG(dag *stack.DAG, left, right string) bool {

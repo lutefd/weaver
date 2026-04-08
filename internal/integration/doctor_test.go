@@ -213,6 +213,92 @@ func TestAnalyzerWarnsOnForeignMergeCommit(t *testing.T) {
 	}
 }
 
+func TestAnalyzerForeignAncestryOnlyBlamesImportingBranch(t *testing.T) {
+	t.Parallel()
+
+	repo := initRepo(t)
+	writeRepoFile(t, repo, "README.md", "base\n")
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+
+	runGit(t, repo, "checkout", "-b", "feature-a")
+	writeRepoFile(t, repo, "feature-a.txt", "feature-a\n")
+	runGit(t, repo, "add", "feature-a.txt")
+	runGit(t, repo, "commit", "-m", "feature-a")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "checkout", "-b", "feature-debug")
+	writeRepoFile(t, repo, "feature-debug.txt", "feature-debug\n")
+	runGit(t, repo, "add", "feature-debug.txt")
+	runGit(t, repo, "commit", "-m", "feature-debug")
+	runGit(t, repo, "merge", "--no-ff", "-m", "merge feature-a", "feature-a")
+
+	dag, err := stack.NewDAG(nil)
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	report, err := NewAnalyzer(gitrunner.NewCLIRunner(repo, nil)).Analyze(context.Background(), dag, "integration", Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a", "feature-debug"},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+
+	if containsMessage(report, `branch "feature-a" has foreign ancestry`) {
+		t.Fatalf("Analyze() checks = %#v, did not want feature-a foreign ancestry", report.Checks)
+	}
+	if !containsMessage(report, `branch "feature-debug" has foreign ancestry`) {
+		t.Fatalf("Analyze() checks = %#v, want feature-debug foreign ancestry", report.Checks)
+	}
+}
+
+func TestAnalyzerIgnoresMergeOnlySharedCommitForForeignAncestry(t *testing.T) {
+	t.Parallel()
+
+	repo := initRepo(t)
+	writeRepoFile(t, repo, "README.md", "base\n")
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+
+	runGit(t, repo, "checkout", "-b", "feature-shared")
+	writeRepoFile(t, repo, "shared.txt", "shared\n")
+	runGit(t, repo, "add", "shared.txt")
+	runGit(t, repo, "commit", "-m", "feature-shared")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "checkout", "-b", "feature-a")
+	writeRepoFile(t, repo, "feature-a.txt", "feature-a\n")
+	runGit(t, repo, "add", "feature-a.txt")
+	runGit(t, repo, "commit", "-m", "feature-a")
+	runGit(t, repo, "merge", "--no-ff", "-m", "merge feature-shared", "feature-shared")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "checkout", "-b", "feature-b")
+	writeRepoFile(t, repo, "feature-b.txt", "feature-b\n")
+	runGit(t, repo, "add", "feature-b.txt")
+	runGit(t, repo, "commit", "-m", "feature-b")
+	runGit(t, repo, "merge", "--no-ff", "-m", "merge feature-shared", "feature-shared")
+
+	dag, err := stack.NewDAG(nil)
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	report, err := NewAnalyzer(gitrunner.NewCLIRunner(repo, nil)).Analyze(context.Background(), dag, "integration", Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a", "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+
+	if containsMessage(report, "has foreign ancestry") {
+		t.Fatalf("Analyze() checks = %#v, did not want foreign ancestry failure", report.Checks)
+	}
+}
+
 func containsMessage(report *Report, fragment string) bool {
 	for _, check := range report.Checks {
 		if strings.Contains(check.Message, fragment) {
