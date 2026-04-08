@@ -74,6 +74,22 @@ func (s *LocalSource) Remove(_ context.Context, branch string) error {
 	return s.write(file)
 }
 
+func (s *LocalSource) Replace(dependencies map[string]string) error {
+	file := localFile{
+		Version:      config.VersionOne,
+		Dependencies: copyMap(dependencies),
+	}
+	return s.write(file)
+}
+
+func (s *LocalSource) Map(ctx context.Context) (map[string]string, error) {
+	file, err := s.read()
+	if err != nil {
+		return nil, err
+	}
+	return copyMap(file.Dependencies), nil
+}
+
 func (s *LocalSource) read() (localFile, error) {
 	file := localFile{
 		Version:      config.VersionOne,
@@ -129,4 +145,12 @@ func (s *LocalSource) dir() string {
 
 func (s *LocalSource) path() string {
 	return filepath.Join(s.dir(), depsFileName)
+}
+
+func copyMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
