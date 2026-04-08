@@ -60,6 +60,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Compose is ephemeral by default and should restore the original branch after completion.
 - If the user wants a reproducible shared integration recipe, save it first with `weaver integration save <name> --base <branch> <branch...>`.
 - Use `weaver compose --integration <name> ...` when the base and branch set should come from the saved strategy instead of being repeated manually.
+- If one branch is far more divergent than the rest and keeps breaking a large compose, prefer removing it from the compose or saved integration, fixing or merging it manually first, and then adding it back.
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
 - If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.
 
@@ -81,6 +82,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Do not force-push as part of a Weaver workflow unless the user explicitly requests it.
 - If the user asks what Weaver will do without wanting changes yet, prefer read-only commands or `--dry-run`.
 - If `--integration` is selected, do not also invent a manual branch list or `--group` selection in the same command.
+- When a compose fails repeatedly because one branch is badly out of shape, do not keep retrying the full stack blindly; suggest removing that branch from the compose or integration until it is repaired.
 - If a command fails because the repo lacks Weaver metadata, initialize with `weaver init` only when that matches the user’s intent.
 
 ## Reference

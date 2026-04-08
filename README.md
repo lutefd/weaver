@@ -122,6 +122,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - `weaver abort` restores the original branch.
 - `weaver compose` is ephemeral by default.
 - `weaver compose --integration <name>` reuses the saved base and branch set from that integration strategy.
+- If a very divergent branch keeps breaking a large compose, remove it from that compose or integration first, fix or merge it manually, then add it back once it is stable again.
 - `weaver compose --create <branch>` creates a new integration branch from the composed result.
 - `weaver compose --update <branch>` rebuilds an existing integration branch from the clean base and force-moves it to the new composed result.
 

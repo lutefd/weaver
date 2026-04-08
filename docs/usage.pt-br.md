@@ -189,6 +189,8 @@ Com `--create`, o Weaver cria `integration` a partir do commit composto e depois
 
 Com `--update`, o Weaver parte de `main`, recompõe as branches pedidas, move `integration` à força para esse resultado novo e depois volta para a branch original.
 
+Se uma branch estiver muito divergente e continuar quebrando uma composição grande, normalmente é melhor remover essa branch da composição ou da integração salva, corrigir ou mergear manualmente primeiro, e só depois colocá-la de volta quando estiver estável.
+
 Se você já tiver salvo uma estratégia reutilizável, pode compor direto dela:
 
 ```bash

@@ -189,6 +189,8 @@ The `--create` form creates `integration` from the composed commit and then rest
 
 The `--update` form starts from `main`, composes the requested branches, force-moves `integration` to that fresh result, and then restores your original branch.
 
+If one branch is heavily diverged and keeps breaking a large compose, it is often better to remove that branch from the compose or saved integration, fix or merge it manually first, and then add it back once it is stable.
+
 If you already saved a reusable strategy, compose from it directly:
 
 ```bash

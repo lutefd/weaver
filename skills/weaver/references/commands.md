@@ -51,6 +51,7 @@ weaver compose feature-b feature-d --base main --update integration
 ```
 
 Selection rule: use exactly one of explicit branches, `--group`, `--integration`, or `--all`.
+If one branch keeps breaking a large compose because it has drifted too far, remove it from that compose or integration, repair it manually, then add it back.
 
 ## Integrations
 
