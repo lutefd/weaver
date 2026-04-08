@@ -12,9 +12,11 @@ import (
 
 	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/config"
+	"github.com/lutefd/weaver/internal/deps"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
+	"github.com/lutefd/weaver/internal/merger"
 	"github.com/lutefd/weaver/internal/stack"
 	"github.com/spf13/cobra"
 )
@@ -164,6 +166,107 @@ func TestIntegrationDoctorCommandWarnsOnDriftWithoutFailing(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `WARN branch "feature-a" is 10 commit(s) behind expected parent "main" (1 ahead)`) {
 		t.Fatalf("integration doctor output = %q, want drift warning", out.String())
+	}
+}
+
+func TestSyncCommandMergeMode(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"branch --show-current": {Stdout: "feature-c"},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+	if err := deps.NewLocalSource(repoRoot).Replace(map[string]string{
+		"feature-b": "feature-a",
+		"feature-c": "feature-b",
+	}); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	syncCmd.SetOut(&out)
+	if err := syncCmd.Flags().Set("merge", "true"); err != nil {
+		t.Fatalf("Set(merge) error = %v", err)
+	}
+	t.Cleanup(func() {
+		syncCmd.Flags().Set("merge", "false")
+	})
+
+	if err := syncCmd.RunE(syncCmd, []string{"feature-c"}); err != nil {
+		t.Fatalf("sync error = %v", err)
+	}
+	if !strings.Contains(out.String(), "synced feature-c") {
+		t.Fatalf("sync output = %q, want synced feature-c", out.String())
+	}
+
+	wantCalls := []string{
+		"branch --show-current",
+		"checkout feature-a",
+		"merge --no-edit main",
+		"checkout feature-b",
+		"merge --no-edit feature-a",
+		"checkout feature-c",
+		"merge --no-edit feature-b",
+		"checkout feature-c",
+	}
+	if got := runner.calls; strings.Join(got, "\n") != strings.Join(wantCalls, "\n") {
+		t.Fatalf("calls = %#v, want %#v", got, wantCalls)
+	}
+}
+
+func TestContinueCommandResumesMergeSync(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{repoRoot: repoRoot}
+	setTestApp(t, repoRoot, runner)
+	if err := merger.NewStateStore(repoRoot).Save(&merger.State{
+		OriginalBranch: "feature-c",
+		BaseBranch:     "main",
+		AllBranches:    []string{"feature-a"},
+		Current:        "feature-a",
+		CurrentOnto:    "main",
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	continueCmd.SetOut(&out)
+	if err := continueCmd.RunE(continueCmd, nil); err != nil {
+		t.Fatalf("continue error = %v", err)
+	}
+	if !strings.Contains(out.String(), "continued stack sync") {
+		t.Fatalf("continue output = %q, want continued stack sync", out.String())
+	}
+
+	wantCalls := []string{"merge --continue", "checkout feature-c"}
+	if got := runner.calls; strings.Join(got, "\n") != strings.Join(wantCalls, "\n") {
+		t.Fatalf("calls = %#v, want %#v", got, wantCalls)
+	}
+}
+
+func TestAbortCommandAbortsMergeSync(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{repoRoot: repoRoot}
+	setTestApp(t, repoRoot, runner)
+	if err := merger.NewStateStore(repoRoot).Save(&merger.State{
+		OriginalBranch: "feature-c",
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	abortCmd.SetOut(&out)
+	if err := abortCmd.RunE(abortCmd, nil); err != nil {
+		t.Fatalf("abort error = %v", err)
+	}
+	if !strings.Contains(out.String(), "aborted stack sync") {
+		t.Fatalf("abort output = %q, want aborted stack sync", out.String())
+	}
+
+	wantCalls := []string{"merge --abort", "checkout feature-c"}
+	if got := runner.calls; strings.Join(got, "\n") != strings.Join(wantCalls, "\n") {
+		t.Fatalf("calls = %#v, want %#v", got, wantCalls)
 	}
 }
 
@@ -578,6 +681,38 @@ func (r *interactiveComposeRunner) Run(_ context.Context, args ...string) (gitru
 }
 
 func (r *interactiveComposeRunner) RepoRoot() string {
+	return r.repoRoot
+}
+
+type commandRecordingRunner struct {
+	repoRoot string
+	results  map[string]gitrunner.Result
+	errs     map[string]error
+	calls    []string
+}
+
+func (r *commandRecordingRunner) Run(_ context.Context, args ...string) (gitrunner.Result, error) {
+	key := strings.Join(args, " ")
+	r.calls = append(r.calls, key)
+
+	if result, ok := r.results[key]; ok {
+		if err, hasErr := r.errs[key]; hasErr {
+			if result.ExitCode == 0 {
+				result.ExitCode = 1
+			}
+			return result, err
+		}
+		return result, nil
+	}
+
+	if err, ok := r.errs[key]; ok {
+		return gitrunner.Result{ExitCode: 1}, err
+	}
+
+	return gitrunner.Result{}, nil
+}
+
+func (r *commandRecordingRunner) RepoRoot() string {
 	return r.repoRoot
 }
 
