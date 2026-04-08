@@ -47,6 +47,13 @@ Build the CLI:
 make build
 ```
 
+Or install the latest tagged release directly:
+
+```bash
+go install github.com/lutefd/weaver@latest
+weaver version
+```
+
 Initialize Weaver inside a Git repository:
 
 ```bash
