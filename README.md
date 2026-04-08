@@ -13,6 +13,7 @@ It stores stack relationships in `.git/weaver/`, keeps them out of the committed
 - Fetches upstream refs and fast-forwards local branches with `weaver update`.
 - Rebases a stack in dependency order with crash-safe resume state.
 - Composes multiple branches into an ephemeral integration state.
+- Saves reusable integration strategies in `.git/weaver/integrations.yaml`.
 - Manages named compose groups in `.git/weaver/groups.yaml`.
 - Exports and imports local orchestration state as JSON.
 
@@ -26,11 +27,17 @@ weaver unstack <branch>
 weaver deps [branch]
 weaver status
 weaver doctor [--json]
-weaver update [branch...] [--group NAME | --all]
+weaver update [branch...] [--group NAME | --integration NAME | --all]
 weaver sync [branch]
 weaver continue
 weaver abort
-weaver compose [branch...] [--group NAME | --all] [--base BRANCH] [--create BRANCH | --update BRANCH] [--dry-run]
+weaver compose [branch...] [--group NAME | --integration NAME | --all] [--base BRANCH] [--create BRANCH | --update BRANCH] [--dry-run]
+weaver integration save <name> <branch...> [--base BRANCH]
+weaver integration show <name>
+weaver integration list
+weaver integration remove <name>
+weaver integration export <name> [--json]
+weaver integration import <file>
 weaver group create <name> <branch...>
 weaver group add <name> <branch...>
 weaver group remove <name> [branch...]
@@ -73,6 +80,7 @@ Refresh local branches from upstream:
 
 ```bash
 weaver update main feature-a feature-b
+weaver update --integration integration
 weaver update --all
 ```
 
@@ -89,6 +97,8 @@ weaver compose feature-c --dry-run
 weaver compose feature-c
 weaver compose feature-c --base main --create integration
 weaver compose feature-c --base main --update integration
+weaver integration save integration --base main feature-a feature-b feature-c
+weaver compose --integration integration --update integration
 ```
 
 ## Files and State
@@ -97,6 +107,7 @@ Weaver uses local metadata inside `.git/weaver/`.
 
 - `.git/weaver/deps.yaml`: branch dependency declarations.
 - `.git/weaver/groups.yaml`: named compose groups.
+- `.git/weaver/integrations.yaml`: saved integration compose strategies.
 - `.git/weaver/rebase-state.yaml`: in-progress rebase resume state.
 - `.weaver.yaml`: repository-level config.
 
@@ -110,6 +121,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - Rebase state is persisted before each step.
 - `weaver abort` restores the original branch.
 - `weaver compose` is ephemeral by default.
+- `weaver compose --integration <name>` reuses the saved base and branch set from that integration strategy.
 - `weaver compose --create <branch>` creates a new integration branch from the composed result.
 - `weaver compose --update <branch>` rebuilds an existing integration branch from the clean base and force-moves it to the new composed result.
 

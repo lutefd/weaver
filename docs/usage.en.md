@@ -120,6 +120,12 @@ Update a named group:
 weaver update --group sprint-42
 ```
 
+Update every branch tracked by a saved integration strategy:
+
+```bash
+weaver update --integration integration
+```
+
 `weaver update` runs `git fetch --all`, then fast-forwards each selected local branch to its configured upstream ref. It stops if a branch has no upstream or cannot be fast-forwarded.
 
 ## Rebase a Stack
@@ -183,6 +189,52 @@ The `--create` form creates `integration` from the composed commit and then rest
 
 The `--update` form starts from `main`, composes the requested branches, force-moves `integration` to that fresh result, and then restores your original branch.
 
+If you already saved a reusable strategy, compose from it directly:
+
+```bash
+weaver compose --integration integration --update integration
+```
+
+When `--integration` is used, Weaver takes the base and selected branches from the saved strategy.
+
+## Manage Saved Integrations
+
+Save or update a strategy:
+
+```bash
+weaver integration save integration --base main feature-a feature-b feature-c
+```
+
+Show it:
+
+```bash
+weaver integration show integration
+```
+
+List saved strategies:
+
+```bash
+weaver integration list
+```
+
+Remove one:
+
+```bash
+weaver integration remove integration
+```
+
+Export one strategy as JSON:
+
+```bash
+weaver integration export integration --json > integration.json
+```
+
+Import it into another clone:
+
+```bash
+weaver integration import integration.json
+```
+
 ## Manage Groups
 
 Create a group:
@@ -223,7 +275,7 @@ weaver compose --group sprint-42
 
 ## Export and Import
 
-Export local orchestration state:
+Export local orchestration state, including saved integrations:
 
 ```bash
 weaver export > weaver-state.json

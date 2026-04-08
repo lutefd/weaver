@@ -25,6 +25,7 @@ weaver/
 ├── internal/resolver/    # DAG construction from dependency sources
 ├── internal/rebaser/     # Ordered stack rebase + persisted resume state
 ├── internal/composer/    # Ephemeral multi-branch compose engine
+├── internal/integration/ # Saved integration strategy storage + sharing
 ├── internal/group/       # Named compose groups
 ├── internal/portability/ # Export / import support
 └── internal/ui/          # Tree and chain rendering
@@ -80,6 +81,7 @@ It checks:
 - config loading and base branch existence
 - dependency graph validity and referenced branches
 - group file validity and referenced branches
+- integration strategy validity and referenced branches
 - pending rebase state sanity
 - detached HEAD, dirty working tree, and in-progress Git operations
 
@@ -101,6 +103,7 @@ Key properties:
 
 - explicit branches
 - a named group via `--group`
+- a saved integration strategy via `--integration`
 - every tracked branch via `--all`
 
 The engine:
@@ -119,8 +122,15 @@ If a branch has no upstream, does not exist locally, or cannot be fast-forwarded
 
 - explicit branches
 - a named group via `--group`
+- a saved integration strategy via `--integration`
 - every tracked branch via `--all`
 - an optional `--base <branch>` override for the composition target
+
+Saved integration strategies live in `.git/weaver/integrations.yaml` and record:
+
+- a reusable integration name
+- the base branch
+- the explicit branch list to compose in a shared, reproducible way
 
 The engine:
 
@@ -143,6 +153,7 @@ Weaver can export local orchestration state to JSON:
 
 - dependencies
 - groups
+- integrations
 - export timestamp
 
 That file can be imported into another clone by a different orchestrator without needing to reconstruct the stack manually.

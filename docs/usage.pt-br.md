@@ -120,6 +120,12 @@ Atualize um grupo nomeado:
 weaver update --group sprint-42
 ```
 
+Atualize todas as branches rastreadas por uma estratégia de integração salva:
+
+```bash
+weaver update --integration integration
+```
+
 `weaver update` roda `git fetch --all` uma vez e depois faz fast-forward de cada branch local selecionada até o upstream configurado. O comando para se uma branch não tiver upstream ou não puder receber fast-forward.
 
 ## Rebase de um Stack
@@ -183,6 +189,52 @@ Com `--create`, o Weaver cria `integration` a partir do commit composto e depois
 
 Com `--update`, o Weaver parte de `main`, recompõe as branches pedidas, move `integration` à força para esse resultado novo e depois volta para a branch original.
 
+Se você já tiver salvo uma estratégia reutilizável, pode compor direto dela:
+
+```bash
+weaver compose --integration integration --update integration
+```
+
+Ao usar `--integration`, o Weaver pega a base e a lista de branches da estratégia salva.
+
+## Gerenciar Integrações Salvas
+
+Salve ou atualize uma estratégia:
+
+```bash
+weaver integration save integration --base main feature-a feature-b feature-c
+```
+
+Mostre a estratégia:
+
+```bash
+weaver integration show integration
+```
+
+Liste as estratégias salvas:
+
+```bash
+weaver integration list
+```
+
+Remova uma estratégia:
+
+```bash
+weaver integration remove integration
+```
+
+Exporte uma estratégia em JSON:
+
+```bash
+weaver integration export integration --json > integration.json
+```
+
+Importe em outro clone:
+
+```bash
+weaver integration import integration.json
+```
+
 ## Gerenciar Grupos
 
 Crie um grupo:
@@ -223,7 +275,7 @@ weaver compose --group sprint-42
 
 ## Exportar e Importar
 
-Exporte o estado local:
+Exporte o estado local, incluindo integrações salvas:
 
 ```bash
 weaver export > weaver-state.json
