@@ -71,7 +71,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 
 - Use `weaver integration save <name> --base <branch> <branch...>` to create or update a reusable integration strategy.
 - Use `weaver integration show <name>` or `weaver integration list` to inspect saved strategies.
-- Use `weaver integration doctor <name>` when the strategy may have foreign ancestry, drift, or merge-heavy branches.
+- Use `weaver integration doctor <name>` when the strategy may have foreign ancestry, drift, or suspicious merge history.
 - Use `weaver integration export <name> --json` to share one strategy directly.
 - Use `weaver integration import <file>` to restore one shared strategy in another clone.
 

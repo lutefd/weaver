@@ -126,7 +126,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - `weaver abort` restores the original branch.
 - `weaver compose` is ephemeral by default.
 - `weaver compose --integration <name>` reuses the saved base and branch set from that integration strategy.
-- `weaver integration doctor <name>` checks whether a saved integration is coherent, including drift, foreign ancestry, and merge-heavy branches.
+- `weaver integration doctor <name>` checks whether a saved integration is coherent, including drift, foreign ancestry, and suspicious merge history.
 - Compose failures report the branch that failed and the conflicting files.
 - `weaver compose --skip <branch>` leaves that branch out of the resolved compose order so you can merge it manually later.
 - If you do not pass `--skip`, compose will prompt you to skip the failing branch or abort.
