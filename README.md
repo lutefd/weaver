@@ -129,6 +129,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - `weaver integration doctor <name>` checks whether a saved integration is coherent, including drift, foreign ancestry, and merge-heavy branches.
 - Compose failures report the branch that failed and the conflicting files.
 - `weaver compose --skip <branch>` leaves that branch out of the resolved compose order so you can merge it manually later.
+- If you do not pass `--skip`, compose will prompt you to skip the failing branch or abort.
 - If a very divergent branch keeps breaking a large compose, remove it from that compose or integration first, repair it, and then merge it manually onto the branch produced by `weaver compose --create <branch>` or `--update <branch>` before adding it back once it is stable again.
 - `weaver compose --create <branch>` creates a new integration branch from the composed result.
 - `weaver compose --update <branch>` rebuilds an existing integration branch from the clean base and force-moves it to the new composed result.

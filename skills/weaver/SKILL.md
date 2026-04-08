@@ -62,6 +62,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Use `weaver integration doctor <name>` when the user wants to know whether a saved integration is coherent before composing it.
 - Use `weaver compose --integration <name> ...` when the base and branch set should come from the saved strategy instead of being repeated manually.
 - Use `weaver compose ... --skip <branch>` when one branch should be left out temporarily for manual follow-up.
+- If the user did not provide `--skip`, expect `weaver compose` to prompt for `skip` or `abort` when a branch conflicts.
 - If one branch is far more divergent than the rest and keeps breaking a large compose, prefer removing it from the compose or saved integration, repairing it first, and then merging it manually onto the branch created or updated by Weaver before adding it back.
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
 - If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.

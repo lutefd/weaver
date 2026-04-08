@@ -52,6 +52,7 @@ weaver compose feature-b feature-d --base main --update integration
 ```
 
 Selection rule: use exactly one of explicit branches, `--group`, `--integration`, or `--all`.
+If no `--skip` is provided and a branch conflicts, Weaver prompts for `skip` or `abort`.
 If one branch keeps breaking a large compose because it has drifted too far, remove it from that compose or integration, repair it, and then merge it manually onto the branch produced by `--create` or `--update` before adding it back.
 
 ## Integrations

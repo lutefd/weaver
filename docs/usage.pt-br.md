@@ -197,6 +197,8 @@ Com `--update`, o Weaver parte de `main`, recompõe as branches pedidas, move `i
 
 Se a composição encontrar conflito, o Weaver informa qual branch falhou e quais arquivos entraram em conflito.
 
+Se você não tiver passado `--skip`, o Weaver pergunta se quer pular a branch com problema ou abortar a composição.
+
 Se uma branch estiver muito divergente e continuar quebrando uma composição grande, normalmente é melhor remover essa branch da composição ou da integração salva, corrigi-la primeiro, e depois mergeá-la manualmente na branch produzida por `--create` ou `--update` antes de colocá-la de volta quando estiver estável.
 
 Se você já tiver salvo uma estratégia reutilizável, pode compor direto dela:

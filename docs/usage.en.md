@@ -197,6 +197,8 @@ The `--update` form starts from `main`, composes the requested branches, force-m
 
 If compose hits a conflict, Weaver reports the branch that failed and the conflicted files.
 
+If you did not already pass `--skip`, Weaver prompts you to skip the failing branch or abort the compose.
+
 If one branch is heavily diverged and keeps breaking a large compose, it is often better to remove that branch from the compose or saved integration, repair it first, and then merge it manually onto the branch produced by `--create` or `--update` before adding it back.
 
 If you already saved a reusable strategy, compose from it directly:
