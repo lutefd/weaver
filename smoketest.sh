@@ -86,6 +86,7 @@ run_in "$PRIMARY_REPO" "$BINARY" group remove sprint-42 feature-c
 run_in "$PRIMARY_REPO" "$BINARY" group list
 
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --create integration-preview --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base integration --persist --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42 --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --all --dry-run
@@ -100,6 +101,11 @@ run_in "$PRIMARY_REPO" "$BINARY" status
 
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42
 run_in "$PRIMARY_REPO" git branch --show-current
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --create integration-preview
+if ! (cd "$PRIMARY_REPO" && git show-ref --verify --quiet refs/heads/integration-preview); then
+  echo "[smoke] expected integration-preview branch to be created"
+  exit 1
+fi
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base integration --persist
 integration_chain="$(cd "$PRIMARY_REPO" && git rev-list --count integration ^main)"
 echo "[smoke] integration-only commits after persist: $integration_chain"

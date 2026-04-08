@@ -95,12 +95,13 @@ The engine:
 3. Produces a stable parent-before-child order.
 4. Checks out detached `HEAD` at the base branch.
 5. Merges each branch in order.
-6. Optionally updates the base branch when `--persist` is requested.
-7. Restores the original branch.
+6. Optionally creates a new branch from the composed result when `--create` is requested.
+7. Optionally updates the base branch when `--persist` is requested.
+8. Restores the original branch.
 
 If a merge fails, the compose operation aborts and restores the prior branch.
 
-By default compose is ephemeral. Persistent branch updates require explicit opt-in with `--persist`.
+By default compose is ephemeral. Persistent branch updates require explicit opt-in with `--persist`, and new integration branches can be created explicitly with `--create`.
 
 ## Portability
 

@@ -80,6 +80,36 @@ func TestResolveComposeBranches(t *testing.T) {
 	}
 }
 
+func TestResolveComposeOptions(t *testing.T) {
+	cmd := cloneComposeCommand()
+	cmd.Flags().Set("dry-run", "true")
+	cmd.Flags().Set("create", "integration")
+
+	opts, err := resolveComposeOptions(cmd, "main")
+	if err != nil {
+		t.Fatalf("resolveComposeOptions() error = %v", err)
+	}
+	if !opts.DryRun || opts.CreateBranch != "integration" || opts.Persist {
+		t.Fatalf("resolveComposeOptions() = %#v, want dry-run create opts", opts)
+	}
+
+	cmd = cloneComposeCommand()
+	cmd.Flags().Set("persist", "true")
+	cmd.Flags().Set("create", "integration")
+	_, err = resolveComposeOptions(cmd, "main")
+	var usageErr usageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
+	}
+
+	cmd = cloneComposeCommand()
+	cmd.Flags().Set("create", "main")
+	_, err = resolveComposeOptions(cmd, "main")
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
+	}
+}
+
 func TestExportAndImportCommands(t *testing.T) {
 	repoRoot := t.TempDir()
 	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
@@ -147,7 +177,10 @@ func cloneComposeCommand() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("group", "", "group")
 	cmd.Flags().Bool("all", false, "all")
+	cmd.Flags().String("base", "", "base")
+	cmd.Flags().String("create", "", "create")
 	cmd.Flags().Bool("dry-run", false, "dry-run")
+	cmd.Flags().Bool("persist", false, "persist")
 	return cmd
 }
 

@@ -140,6 +140,67 @@ func TestComposePersistsBaseBranchWhenRequested(t *testing.T) {
 	}
 }
 
+func TestComposeCreatesNewBranchWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	runner := &composeRunner{
+		results: map[string]gitrunner.Result{
+			"branch --show-current": {Stdout: "topic"},
+		},
+	}
+	got, err := New(runner).Compose(context.Background(), dag, []string{"feature-b"}, "main", ComposeOpts{CreateBranch: "integration"})
+	if err != nil {
+		t.Fatalf("Compose() error = %v", err)
+	}
+	want := &ComposeResult{
+		OriginalBranch: "topic",
+		BaseBranch:     "main",
+		Order:          []string{"feature-a", "feature-b"},
+		Persisted:      false,
+		CreatedBranch:  "integration",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Compose() = %#v, want %#v", got, want)
+	}
+
+	wantCalls := []string{
+		"branch --show-current",
+		"checkout --detach main",
+		"merge --no-ff --no-edit feature-a",
+		"merge --no-ff --no-edit feature-b",
+		"branch integration HEAD",
+		"checkout topic",
+	}
+	if !reflect.DeepEqual(runner.calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, wantCalls)
+	}
+}
+
+func TestComposeRejectsPersistAndCreateTogether(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-a", Parent: "main"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	_, err = New(&composeRunner{}).Compose(context.Background(), dag, []string{"feature-a"}, "main", ComposeOpts{
+		Persist:      true,
+		CreateBranch: "integration",
+	})
+	if err == nil {
+		t.Fatal("Compose() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "cannot use persist and create branch together") {
+		t.Fatalf("Compose() error = %v, want persist/create validation", err)
+	}
+}
+
 func TestComposeConflictAbortsAndRestoresBranch(t *testing.T) {
 	t.Parallel()
 

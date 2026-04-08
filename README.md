@@ -26,7 +26,7 @@ weaver status
 weaver sync [branch]
 weaver continue
 weaver abort
-weaver compose [branch...] [--group NAME | --all] [--base BRANCH] [--persist] [--dry-run]
+weaver compose [branch...] [--group NAME | --all] [--base BRANCH] [--create BRANCH | --persist] [--dry-run]
 weaver group create <name> <branch...>
 weaver group add <name> <branch...>
 weaver group remove <name> [branch...]
@@ -74,6 +74,7 @@ Compose it:
 ```bash
 ./bin/weaver compose feature-c --dry-run
 ./bin/weaver compose feature-c
+./bin/weaver compose feature-c --base main --create integration
 ./bin/weaver compose feature-c --base integration --persist
 ```
 
@@ -95,6 +96,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - Rebase state is persisted before each step.
 - `weaver abort` restores the original branch.
 - `weaver compose` is ephemeral by default.
+- `weaver compose --create <branch>` creates a new integration branch from the composed result.
 - `weaver compose --persist` explicitly updates the chosen base branch to the composed result.
 
 ## Docs

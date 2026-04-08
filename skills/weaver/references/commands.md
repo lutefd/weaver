@@ -33,11 +33,13 @@ weaver abort
 
 ```bash
 weaver compose feature-c --dry-run
+weaver compose feature-c --base main --create integration --dry-run
 weaver compose feature-c --base integration --persist --dry-run
 weaver compose feature-a feature-c feature-e
 weaver compose --group sprint-42
 weaver compose --group sprint-42 --dry-run
 weaver compose --all
+weaver compose feature-b feature-d --base main --create integration
 weaver compose feature-b feature-d --base integration --persist
 ```
 

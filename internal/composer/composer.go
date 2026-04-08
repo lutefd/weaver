@@ -14,8 +14,9 @@ type Composer interface {
 }
 
 type ComposeOpts struct {
-	DryRun  bool
-	Persist bool
+	DryRun       bool
+	Persist      bool
+	CreateBranch string
 }
 
 type ComposeResult struct {
@@ -24,6 +25,7 @@ type ComposeResult struct {
 	Order          []string
 	DryRun         bool
 	Persisted      bool
+	CreatedBranch  string
 }
 
 type ConflictError struct {
@@ -48,16 +50,21 @@ func New(runner gitrunner.Runner) *Engine {
 }
 
 func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string, base string, opts ComposeOpts) (*ComposeResult, error) {
+	if opts.Persist && opts.CreateBranch != "" {
+		return nil, fmt.Errorf("cannot use persist and create branch together")
+	}
+
 	order, err := resolveComposeOrder(dag, branches, base)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &ComposeResult{
-		BaseBranch: base,
-		Order:      order,
-		DryRun:     opts.DryRun,
-		Persisted:  opts.Persist && !opts.DryRun,
+		BaseBranch:    base,
+		Order:         order,
+		DryRun:        opts.DryRun,
+		Persisted:     opts.Persist && !opts.DryRun,
+		CreatedBranch: opts.CreateBranch,
 	}
 	if opts.DryRun {
 		return result, nil
@@ -81,7 +88,12 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 		}
 	}
 
-	if opts.Persist {
+	if opts.CreateBranch != "" {
+		if _, err := e.runner.Run(ctx, "branch", opts.CreateBranch, "HEAD"); err != nil {
+			_ = restoreBranch(ctx, e.runner, originalBranch)
+			return nil, err
+		}
+	} else if opts.Persist {
 		if _, err := e.runner.Run(ctx, "branch", "-f", base, "HEAD"); err != nil {
 			_ = restoreBranch(ctx, e.runner, originalBranch)
 			return nil, err

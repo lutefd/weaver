@@ -128,13 +128,21 @@ Compose all tracked branches:
 
 Compose is ephemeral by default. It uses detached `HEAD`, performs the merges, and returns you to the original branch.
 
-If you want a real integration branch updated with the composed result, opt in explicitly:
+If you want a new integration branch created from the composed result, opt in explicitly:
+
+```bash
+./bin/weaver compose feature-b feature-d --base main --create integration
+```
+
+If you want an existing integration branch updated with the composed result, opt in explicitly:
 
 ```bash
 ./bin/weaver compose feature-b feature-d --base integration --persist
 ```
 
-That updates `integration` to the composed commit and then restores your original branch.
+The `--create` form creates `integration` from the composed commit and then restores your original branch.
+
+The `--persist` form updates `integration` to the composed commit and then restores your original branch.
 
 ## Manage Groups
 

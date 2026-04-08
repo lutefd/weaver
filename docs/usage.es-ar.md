@@ -128,13 +128,21 @@ Componer todas las branches registradas:
 
 La composición es efímera por defecto. Usa `HEAD` detached, hace los merges y vuelve a la branch original.
 
+Si querés crear una nueva branch de integración a partir del resultado compuesto, hacelo de forma explícita:
+
+```bash
+./bin/weaver compose feature-b feature-d --base main --create integration
+```
+
 Si querés actualizar una branch real de integración con el resultado compuesto, hacelo de forma explícita:
 
 ```bash
 ./bin/weaver compose feature-b feature-d --base integration --persist
 ```
 
-Eso actualiza `integration` al commit compuesto y después vuelve a la branch original.
+Con `--create`, Weaver crea `integration` desde el commit compuesto y después vuelve a la branch original.
+
+Con `--persist`, Weaver actualiza `integration` al commit compuesto y después vuelve a la branch original.
 
 ## Manejar Grupos
 
