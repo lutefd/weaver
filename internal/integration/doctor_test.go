@@ -90,7 +90,7 @@ func TestAnalyzerDetectsForeignAncestry(t *testing.T) {
 	}
 }
 
-func TestAnalyzerDetectsLargeDrift(t *testing.T) {
+func TestAnalyzerWarnsOnLargeDrift(t *testing.T) {
 	t.Parallel()
 
 	repo := initRepo(t)
@@ -104,7 +104,7 @@ func TestAnalyzerDetectsLargeDrift(t *testing.T) {
 	runGit(t, repo, "commit", "-m", "feature-a")
 	runGit(t, repo, "checkout", "main")
 
-	for i := 0; i < excessiveBehindThreshold; i++ {
+	for i := 0; i < 10; i++ {
 		writeRepoFile(t, repo, "main.txt", strings.Repeat("m", i+1))
 		runGit(t, repo, "add", "main.txt")
 		runGit(t, repo, "commit", "-m", "main-update")
@@ -122,11 +122,14 @@ func TestAnalyzerDetectsLargeDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
-	if !report.HasFailures() {
-		t.Fatalf("Analyze() expected failure, got %#v", report.Checks)
+	if report.HasFailures() {
+		t.Fatalf("Analyze() failures = %#v, want none for drift-only report", report.Checks)
+	}
+	if report.Summary.Warn == 0 {
+		t.Fatalf("Analyze() warnings = %d, want drift warning", report.Summary.Warn)
 	}
 	if !containsMessage(report, "behind expected parent") {
-		t.Fatalf("Analyze() checks = %#v, want drift failure", report.Checks)
+		t.Fatalf("Analyze() checks = %#v, want drift warning", report.Checks)
 	}
 }
 

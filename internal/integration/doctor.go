@@ -12,8 +12,6 @@ import (
 	"github.com/lutefd/weaver/internal/stack"
 )
 
-const excessiveBehindThreshold = 10
-
 type Level string
 
 const (
@@ -178,8 +176,6 @@ func (a *Analyzer) checkBranch(ctx context.Context, report *Report, dag *stack.D
 				message += fmt.Sprintf(" (%s)", strings.Join(conflictFiles, ", "))
 			}
 			report.addHint(LevelFail, "conflict_risk", manualMergeHint(integrationName, branch), "%s", message)
-		case behind >= excessiveBehindThreshold:
-			report.addHint(LevelFail, "drift", manualMergeHint(integrationName, branch), `branch %q is %d commit(s) behind expected parent %q (%d ahead)`, branch, behind, parent, ahead)
 		default:
 			report.addHint(LevelWarn, "drift", manualMergeHint(integrationName, branch), `branch %q is %d commit(s) behind expected parent %q (%d ahead)`, branch, behind, parent, ahead)
 		}
