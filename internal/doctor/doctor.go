@@ -15,6 +15,7 @@ import (
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
+	"github.com/lutefd/weaver/internal/merger"
 	"github.com/lutefd/weaver/internal/rebaser"
 	"github.com/lutefd/weaver/internal/resolver"
 )
@@ -355,39 +356,58 @@ func (c *Checker) checkIntegrations(ctx context.Context, report *Report, tracked
 }
 
 func (c *Checker) checkRebaseState(ctx context.Context, report *Report, tracked map[string]struct{}) {
-	store := rebaser.NewStateStore(c.runner.RepoRoot())
-	if !store.HasPending() {
+	rebaseStore := rebaser.NewStateStore(c.runner.RepoRoot())
+	mergeStore := merger.NewStateStore(c.runner.RepoRoot())
+
+	switch {
+	case rebaseStore.HasPending() && mergeStore.HasPending():
+		report.addHint(LevelFail, "rebase_state", "remove or repair .git/weaver/rebase-state.yaml and .git/weaver/merge-state.yaml", "both rebase and merge stack sync state files are present")
+		return
+	case mergeStore.HasPending():
+		state, err := mergeStore.Load()
+		if err != nil {
+			report.addHint(LevelFail, "rebase_state", "remove or repair .git/weaver/merge-state.yaml", "cannot load pending merge sync state: %v", err)
+			return
+		}
+
+		report.add(LevelWarn, "rebase_state", "pending merge stack sync state detected for %q", state.Current)
+		c.checkPendingStateBranches(ctx, report, tracked, state.OriginalBranch, state.BaseBranch, state.AllBranches, ".git/weaver/merge-state.yaml")
+		return
+	case !rebaseStore.HasPending():
 		report.add(LevelOK, "rebase_state", "no pending stack sync state found")
 		return
 	}
 
-	state, err := store.Load()
+	state, err := rebaseStore.Load()
 	if err != nil {
 		report.addHint(LevelFail, "rebase_state", "remove or repair .git/weaver/rebase-state.yaml", "cannot load pending stack sync state: %v", err)
 		return
 	}
 
 	report.add(LevelWarn, "rebase_state", "pending stack sync state detected for %q", state.Current)
+	c.checkPendingStateBranches(ctx, report, tracked, state.OriginalBranch, state.BaseBranch, state.AllBranches, ".git/weaver/rebase-state.yaml")
+}
 
-	if state.OriginalBranch == "" {
-		report.addHint(LevelFail, "rebase_state_branch", "remove or repair .git/weaver/rebase-state.yaml", "pending stack sync state is missing original_branch")
+func (c *Checker) checkPendingStateBranches(ctx context.Context, report *Report, tracked map[string]struct{}, originalBranch, baseBranch string, allBranches []string, statePath string) {
+	if originalBranch == "" {
+		report.addHint(LevelFail, "rebase_state_branch", "remove or repair "+statePath, "pending stack sync state is missing original_branch")
 	} else {
-		tracked[state.OriginalBranch] = struct{}{}
-		c.checkBranchPresence(ctx, report, state.OriginalBranch, "rebase original branch", "rebase_state_branch")
+		tracked[originalBranch] = struct{}{}
+		c.checkBranchPresence(ctx, report, originalBranch, "rebase original branch", "rebase_state_branch")
 	}
 
-	if state.BaseBranch == "" {
-		report.addHint(LevelFail, "rebase_state_branch", "remove or repair .git/weaver/rebase-state.yaml", "pending stack sync state is missing base_branch")
+	if baseBranch == "" {
+		report.addHint(LevelFail, "rebase_state_branch", "remove or repair "+statePath, "pending stack sync state is missing base_branch")
 	} else {
-		tracked[state.BaseBranch] = struct{}{}
-		c.checkBranchPresence(ctx, report, state.BaseBranch, "rebase base branch", "rebase_state_branch")
+		tracked[baseBranch] = struct{}{}
+		c.checkBranchPresence(ctx, report, baseBranch, "rebase base branch", "rebase_state_branch")
 	}
 
-	if len(state.AllBranches) == 0 {
-		report.addHint(LevelFail, "rebase_state_branch", "remove or repair .git/weaver/rebase-state.yaml", "pending stack sync state is missing all_branches")
+	if len(allBranches) == 0 {
+		report.addHint(LevelFail, "rebase_state_branch", "remove or repair "+statePath, "pending stack sync state is missing all_branches")
 	}
 
-	for _, branch := range state.AllBranches {
+	for _, branch := range allBranches {
 		tracked[branch] = struct{}{}
 		c.checkBranchPresence(ctx, report, branch, "rebase branch", "rebase_state_branch")
 	}
