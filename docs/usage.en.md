@@ -142,6 +142,12 @@ If you are already on the branch you want to sync:
 weaver sync
 ```
 
+If the branches already have open PRs and you want to preserve their history, merge each parent into the stack instead. This fast-forwards when possible and otherwise records the normal merge commit:
+
+```bash
+weaver sync feature-c --merge
+```
+
 If conflicts stop the process:
 
 ```bash
@@ -149,7 +155,7 @@ weaver continue
 weaver abort
 ```
 
-`continue` resumes after you resolve conflicts manually. `abort` stops the operation and returns to the original branch.
+`continue` resumes after you resolve conflicts manually. `abort` stops the operation and returns to the original branch. The same commands work for both rebase-based and merge-based stack sync.
 
 ## Compose Branches
 

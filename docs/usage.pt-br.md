@@ -142,6 +142,12 @@ Se você já estiver na branch alvo:
 weaver sync
 ```
 
+Se as branches já tiverem PRs abertos e você quiser preservar o histórico, faça merge de cada parent no stack. Quando possível o Git faz fast-forward; caso contrário, grava o merge commit normal:
+
+```bash
+weaver sync feature-c --merge
+```
+
 Se houver conflito:
 
 ```bash
@@ -149,7 +155,7 @@ weaver continue
 weaver abort
 ```
 
-`continue` retoma depois da resolução manual. `abort` cancela a operação e volta para a branch original.
+`continue` retoma depois da resolução manual. `abort` cancela a operação e volta para a branch original. Os mesmos comandos funcionam tanto para sync com rebase quanto para sync com merge.
 
 ## Compor Branches
 

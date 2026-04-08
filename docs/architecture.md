@@ -97,6 +97,12 @@ Key properties:
 - the original branch is restored after success or abort
 - mutating Git commands are printed before execution
 
+## Merge Sync Engine
+
+`weaver sync --merge` resolves the same ancestor chain but merges each parent into its child in order, allowing fast-forwards when Git can do them cleanly.
+
+State is written to `.git/weaver/merge-state.yaml` before each step so `weaver continue` and `weaver abort` can recover safely without rewriting branch history.
+
 ## Update Engine
 
 `weaver update` accepts:
