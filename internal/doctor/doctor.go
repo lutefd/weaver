@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/lutefd/weaver/internal/config"
 	"github.com/lutefd/weaver/internal/deps"
+	gitparse "github.com/lutefd/weaver/internal/git"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
@@ -321,6 +321,37 @@ func (c *Checker) checkIntegrations(ctx context.Context, report *Report, tracked
 			c.checkBranchPresence(ctx, report, branch, fmt.Sprintf("integration branch in %q", name), "integration_branch")
 		}
 	}
+
+	dag, err := resolver.New(deps.NewLocalSource(c.runner.RepoRoot())).Resolve(ctx)
+	if err != nil {
+		return
+	}
+
+	analyzer := weaverintegration.NewAnalyzer(c.runner)
+	for _, name := range names {
+		recipe := integrations[name]
+		integrationReport, err := analyzer.Analyze(ctx, dag, name, recipe)
+		if err != nil {
+			report.addHint(LevelFail, "integration_strategy", "inspect the integration branches and compose base manually", "cannot analyze integration %q: %v", name, err)
+			continue
+		}
+
+		hasIssues := false
+		for _, check := range integrationReport.Checks {
+			if check.Level == weaverintegration.LevelOK {
+				continue
+			}
+			hasIssues = true
+			level := LevelWarn
+			if check.Level == weaverintegration.LevelFail {
+				level = LevelFail
+			}
+			report.addHint(level, "integration_strategy", check.Hint, "integration %q: %s", name, check.Message)
+		}
+		if !hasIssues {
+			report.add(LevelOK, "integration_strategy", "integration %q compose strategy looks coherent", name)
+		}
+	}
 }
 
 func (c *Checker) checkRebaseState(ctx context.Context, report *Report, tracked map[string]struct{}) {
@@ -507,19 +538,5 @@ func (c *Checker) aheadBehind(ctx context.Context, branch string, upstream strin
 	if err != nil {
 		return 0, 0, err
 	}
-	parts := strings.Fields(result.Stdout)
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("unexpected ahead/behind output %q", result.Stdout)
-	}
-
-	ahead, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, 0, fmt.Errorf("parse ahead count %q: %w", parts[0], err)
-	}
-	behind, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, fmt.Errorf("parse behind count %q: %w", parts[1], err)
-	}
-
-	return ahead, behind, nil
+	return gitparse.ParseAheadBehind(result.Stdout)
 }

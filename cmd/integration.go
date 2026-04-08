@@ -1,22 +1,29 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
+	"github.com/lutefd/weaver/internal/deps"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
+	"github.com/lutefd/weaver/internal/resolver"
 	"github.com/spf13/cobra"
 )
 
 func init() {
 	integrationSaveCmd.Flags().String("base", "", "base branch to compose onto")
 	integrationExportCmd.Flags().Bool("json", false, "export integration strategy as JSON")
+	integrationDoctorCmd.Flags().Bool("json", false, "print the integration doctor report as JSON")
 
 	integrationCmd.AddCommand(integrationSaveCmd)
 	integrationCmd.AddCommand(integrationShowCmd)
 	integrationCmd.AddCommand(integrationListCmd)
 	integrationCmd.AddCommand(integrationRemoveCmd)
+	integrationCmd.AddCommand(integrationDoctorCmd)
 	integrationCmd.AddCommand(integrationExportCmd)
 	integrationCmd.AddCommand(integrationImportCmd)
 	rootCmd.AddCommand(integrationCmd)
@@ -148,6 +155,52 @@ var integrationExportCmd = &cobra.Command{
 	},
 }
 
+var integrationDoctorCmd = &cobra.Command{
+	Use:   "doctor <name>",
+	Short: "Inspect one saved integration compose strategy for drift and foreign ancestry",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		store := weaverintegration.NewStore(AppContext().Runner.RepoRoot())
+		recipe, ok, err := store.Get(args[0])
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("integration %q does not exist", args[0])
+		}
+
+		dag, err := resolver.New(deps.NewLocalSource(AppContext().Runner.RepoRoot())).Resolve(ctx)
+		if err != nil {
+			return err
+		}
+
+		report, err := weaverintegration.NewAnalyzer(AppContext().Runner).Analyze(ctx, dag, args[0], recipe)
+		if err != nil {
+			return err
+		}
+
+		asJSON, err := cmd.Flags().GetBool("json")
+		if err != nil {
+			return err
+		}
+		if asJSON {
+			encoder := json.NewEncoder(cmd.OutOrStdout())
+			encoder.SetIndent("", "  ")
+			if err := encoder.Encode(report); err != nil {
+				return err
+			}
+		} else {
+			renderIntegrationDoctorReport(cmd.OutOrStdout(), report)
+		}
+
+		if report.HasFailures() {
+			return fmt.Errorf("integration doctor found %d failure(s)", report.Summary.Fail)
+		}
+		return nil
+	},
+}
+
 var integrationImportCmd = &cobra.Command{
 	Use:   "import <file>",
 	Short: "Import one saved integration compose strategy from JSON",
@@ -169,4 +222,20 @@ var integrationImportCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "imported integration %s from %s\n", exported.Integration.Name, args[0])
 		return nil
 	},
+}
+
+func renderIntegrationDoctorReport(w io.Writer, report *weaverintegration.Report) {
+	fmt.Fprintf(w, "integration: %s\n", report.Integration)
+	fmt.Fprintf(w, "base: %s\n", report.Base)
+	if len(report.Order) > 0 {
+		fmt.Fprintf(w, "order: %s\n", strings.Join(report.Order, " -> "))
+	}
+
+	for _, check := range report.Checks {
+		fmt.Fprintf(w, "%-4s %s\n", strings.ToUpper(string(check.Level)), check.Message)
+		if check.Hint != "" {
+			fmt.Fprintf(w, "     fix: %s\n", check.Hint)
+		}
+	}
+	fmt.Fprintf(w, "summary: %d ok, %d warn, %d fail\n", report.Summary.OK, report.Summary.Warn, report.Summary.Fail)
 }

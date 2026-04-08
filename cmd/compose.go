@@ -19,6 +19,7 @@ func init() {
 	composeCmd.Flags().String("base", "", "base branch to compose onto")
 	composeCmd.Flags().String("create", "", "create a new branch with the composed result")
 	composeCmd.Flags().String("update", "", "update an integration branch with a fresh composed result rebuilt from the base")
+	composeCmd.Flags().StringSlice("skip", nil, "skip one or more resolved branches and leave them for manual merge later")
 	composeCmd.Flags().Bool("dry-run", false, "print the compose order without mutating git state")
 	rootCmd.AddCommand(composeCmd)
 }
@@ -61,6 +62,9 @@ var composeCmd = &cobra.Command{
 		if err != nil {
 			var conflictErr composer.ConflictError
 			if errors.As(err, &conflictErr) {
+				if len(conflictErr.Files) > 0 {
+					return fmt.Errorf("compose failed while merging %s (conflicts: %s)", conflictErr.Branch, strings.Join(conflictErr.Files, ", "))
+				}
 				return fmt.Errorf("compose failed while merging %s", conflictErr.Branch)
 			}
 			return err
@@ -73,22 +77,22 @@ var composeCmd = &cobra.Command{
 			case result.UpdatedBranch != "":
 				fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose on %s and update %s: %s\n", result.BaseBranch, result.UpdatedBranch, strings.Join(result.Order, " -> "))
 			default:
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run ephemeral compose on %s: %s\n", result.BaseBranch, strings.Join(result.Order, " -> "))
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run ephemeral compose on %s: %s%s\n", result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			}
 			return nil
 		}
 
 		if result.CreatedBranch != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "created %s from %s with: %s\n", result.CreatedBranch, result.BaseBranch, strings.Join(result.Order, " -> "))
+			fmt.Fprintf(cmd.OutOrStdout(), "created %s from %s with: %s%s\n", result.CreatedBranch, result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			return nil
 		}
 
 		if result.UpdatedBranch != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "updated %s from %s with: %s\n", result.UpdatedBranch, result.BaseBranch, strings.Join(result.Order, " -> "))
+			fmt.Fprintf(cmd.OutOrStdout(), "updated %s from %s with: %s%s\n", result.UpdatedBranch, result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			return nil
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "composed ephemerally on %s: %s\n", result.BaseBranch, strings.Join(result.Order, " -> "))
+		fmt.Fprintf(cmd.OutOrStdout(), "composed ephemerally on %s: %s%s\n", result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 		return nil
 	},
 }
@@ -103,6 +107,10 @@ func resolveComposeOptions(cmd *cobra.Command, base string) (composer.ComposeOpt
 		return composer.ComposeOpts{}, err
 	}
 	updateBranch, err := cmd.Flags().GetString("update")
+	if err != nil {
+		return composer.ComposeOpts{}, err
+	}
+	skipBranches, err := cmd.Flags().GetStringSlice("skip")
 	if err != nil {
 		return composer.ComposeOpts{}, err
 	}
@@ -127,5 +135,13 @@ func resolveComposeOptions(cmd *cobra.Command, base string) (composer.ComposeOpt
 		DryRun:       dryRun,
 		CreateBranch: createBranch,
 		UpdateBranch: updateBranch,
+		SkipBranches: skipBranches,
 	}, nil
+}
+
+func formatSkipped(skipped []string) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (skipped: %s)", strings.Join(skipped, ", "))
 }

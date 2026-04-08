@@ -17,12 +17,14 @@ type ComposeOpts struct {
 	DryRun       bool
 	CreateBranch string
 	UpdateBranch string
+	SkipBranches []string
 }
 
 type ComposeResult struct {
 	OriginalBranch string
 	BaseBranch     string
 	Order          []string
+	Skipped        []string
 	DryRun         bool
 	CreatedBranch  string
 	UpdatedBranch  string
@@ -30,6 +32,7 @@ type ComposeResult struct {
 
 type ConflictError struct {
 	Branch string
+	Files  []string
 	Err    error
 }
 
@@ -65,10 +68,12 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 	if err != nil {
 		return nil, err
 	}
+	order, skipped := applySkippedBranches(order, opts.SkipBranches)
 
 	result := &ComposeResult{
 		BaseBranch:    base,
 		Order:         order,
+		Skipped:       skipped,
 		DryRun:        opts.DryRun,
 		CreatedBranch: opts.CreateBranch,
 		UpdatedBranch: opts.UpdateBranch,
@@ -89,9 +94,13 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 
 	for _, branch := range order {
 		if _, err := e.runner.Run(ctx, "merge", "--no-ff", "--no-edit", branch); err != nil {
+			conflictFiles, filesErr := conflictedFiles(ctx, e.runner)
 			_ = abortMerge(ctx, e.runner)
 			_ = restoreBranch(ctx, e.runner, originalBranch)
-			return result, ConflictError{Branch: branch, Err: err}
+			if filesErr != nil {
+				return result, ConflictError{Branch: branch, Err: err}
+			}
+			return result, ConflictError{Branch: branch, Files: conflictFiles, Err: err}
 		}
 	}
 
@@ -190,6 +199,10 @@ func resolveComposeOrder(dag *stack.DAG, branches []string, base string) ([]stri
 	return order, nil
 }
 
+func ResolveOrder(dag *stack.DAG, branches []string, base string) ([]string, error) {
+	return resolveComposeOrder(dag, branches, base)
+}
+
 func currentBranch(ctx context.Context, runner gitrunner.Runner) (string, error) {
 	result, err := runner.Run(ctx, "branch", "--show-current")
 	if err != nil {
@@ -222,4 +235,40 @@ func insertStable(queue []string, branch string, index map[string]int) []string 
 		queue[i-1], queue[i] = queue[i], queue[i-1]
 	}
 	return queue
+}
+
+func conflictedFiles(ctx context.Context, runner gitrunner.Runner) ([]string, error) {
+	result, err := runner.Run(ctx, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	if result.Stdout == "" {
+		return nil, nil
+	}
+	return strings.Fields(result.Stdout), nil
+}
+
+func applySkippedBranches(order []string, skipBranches []string) ([]string, []string) {
+	if len(skipBranches) == 0 {
+		return order, nil
+	}
+
+	skipSet := make(map[string]struct{}, len(skipBranches))
+	for _, branch := range skipBranches {
+		if branch == "" {
+			continue
+		}
+		skipSet[branch] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(order))
+	skipped := make([]string, 0, len(skipSet))
+	for _, branch := range order {
+		if _, ok := skipSet[branch]; ok {
+			skipped = append(skipped, branch)
+			continue
+		}
+		filtered = append(filtered, branch)
+	}
+	return filtered, skipped
 }

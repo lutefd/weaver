@@ -77,6 +77,46 @@ func TestIntegrationCommands(t *testing.T) {
 	}
 }
 
+func TestIntegrationDoctorCommand(t *testing.T) {
+	repoRoot := t.TempDir()
+	runGit(t, repoRoot, "init", "-b", "main")
+	runGit(t, repoRoot, "config", "user.name", "Command Test")
+	runGit(t, repoRoot, "config", "user.email", "command@example.com")
+	if _, err := config.Initialize(repoRoot); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	runGit(t, repoRoot, "add", "README.md", config.FileName)
+	runGit(t, repoRoot, "commit", "-m", "init")
+	runGit(t, repoRoot, "checkout", "-b", "feature-a")
+	if err := os.WriteFile(filepath.Join(repoRoot, "feature-a.txt"), []byte("feature-a\n"), 0o644); err != nil {
+		t.Fatalf("write feature-a: %v", err)
+	}
+	runGit(t, repoRoot, "add", "feature-a.txt")
+	runGit(t, repoRoot, "commit", "-m", "feature-a")
+	runGit(t, repoRoot, "checkout", "main")
+
+	if err := weaverintegration.NewStore(repoRoot).Save("integration", weaverintegration.Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	setTestApp(t, repoRoot, gitrunner.NewCLIRunner(repoRoot, nil))
+
+	var out bytes.Buffer
+	integrationDoctorCmd.SetOut(&out)
+	if err := integrationDoctorCmd.RunE(integrationDoctorCmd, []string{"integration"}); err != nil {
+		t.Fatalf("integration doctor error = %v", err)
+	}
+	if !strings.Contains(out.String(), "summary:") {
+		t.Fatalf("integration doctor output = %q, want summary", out.String())
+	}
+}
+
 func TestResolveBranchSelection(t *testing.T) {
 	repoRoot := t.TempDir()
 	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
@@ -350,6 +390,7 @@ func cloneComposeCommand() *cobra.Command {
 	cmd.Flags().String("base", "", "base")
 	cmd.Flags().String("create", "", "create")
 	cmd.Flags().String("update", "", "update")
+	cmd.Flags().StringSlice("skip", nil, "skip")
 	cmd.Flags().Bool("dry-run", false, "dry-run")
 	return cmd
 }

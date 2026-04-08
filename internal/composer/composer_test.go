@@ -198,6 +198,35 @@ func TestComposeRejectsCombinedWriteModes(t *testing.T) {
 	}
 }
 
+func TestComposeSkipsRequestedBranches(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got, err := New(&composeRunner{}).Compose(context.Background(), dag, []string{"feature-c"}, "main", ComposeOpts{
+		DryRun:       true,
+		SkipBranches: []string{"feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("Compose() error = %v", err)
+	}
+	want := &ComposeResult{
+		BaseBranch: "main",
+		Order:      []string{"feature-a", "feature-c"},
+		Skipped:    []string{"feature-b"},
+		DryRun:     true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Compose() = %#v, want %#v", got, want)
+	}
+}
+
 func TestComposeConflictAbortsAndRestoresBranch(t *testing.T) {
 	t.Parallel()
 
@@ -210,6 +239,7 @@ func TestComposeConflictAbortsAndRestoresBranch(t *testing.T) {
 		results: map[string]gitrunner.Result{
 			"branch --show-current":             {Stdout: "topic"},
 			"merge --no-ff --no-edit feature-b": {ExitCode: 1},
+			"diff --name-only --diff-filter=U":  {Stdout: "app/service.go\napp/ui.tsx"},
 		},
 		errs: map[string]error{
 			"merge --no-ff --no-edit feature-b": errors.New("exit status 1"),
@@ -223,12 +253,16 @@ func TestComposeConflictAbortsAndRestoresBranch(t *testing.T) {
 	if conflictErr.Branch != "feature-b" {
 		t.Fatalf("ConflictError.Branch = %q, want feature-b", conflictErr.Branch)
 	}
+	if !reflect.DeepEqual(conflictErr.Files, []string{"app/service.go", "app/ui.tsx"}) {
+		t.Fatalf("ConflictError.Files = %#v, want conflict file list", conflictErr.Files)
+	}
 
 	wantCalls := []string{
 		"branch --show-current",
 		"checkout --detach main",
 		"merge --no-ff --no-edit feature-a",
 		"merge --no-ff --no-edit feature-b",
+		"diff --name-only --diff-filter=U",
 		"merge --abort",
 		"checkout topic",
 	}

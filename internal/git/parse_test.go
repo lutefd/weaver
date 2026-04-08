@@ -22,3 +22,15 @@ func TestParseCurrentBranch(t *testing.T) {
 		t.Fatalf("ParseCurrentBranch() = %q, want feature-a", got)
 	}
 }
+
+func TestParseAheadBehind(t *testing.T) {
+	t.Parallel()
+
+	ahead, behind, err := ParseAheadBehind("3\t7\n")
+	if err != nil {
+		t.Fatalf("ParseAheadBehind() error = %v", err)
+	}
+	if ahead != 3 || behind != 7 {
+		t.Fatalf("ParseAheadBehind() = %d, %d, want 3, 7", ahead, behind)
+	}
+}
