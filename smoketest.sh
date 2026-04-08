@@ -46,7 +46,9 @@ run make -C "$ROOT_DIR" build
 
 BINARY="$ROOT_DIR/bin/weaver"
 STATE_FILE="$ROOT_DIR/smoketest-state.json"
+INTEGRATION_FILE="$ROOT_DIR/smoketest-integration.json"
 rm -f "$STATE_FILE"
+rm -f "$INTEGRATION_FILE"
 
 run_in "$PRIMARY_REPO" git init -b main
 run_in "$PRIMARY_REPO" git config user.name "Weaver Smoke"
@@ -102,8 +104,11 @@ run_in "$PRIMARY_REPO" "$BINARY" init
 run_in "$PRIMARY_REPO" "$BINARY" version
 run_in "$PRIMARY_REPO" "$BINARY" stack feature-b --on feature-a
 run_in "$PRIMARY_REPO" "$BINARY" stack feature-c --on feature-b
+run_in "$PRIMARY_REPO" "$BINARY" integration save integration --base main feature-a feature-b feature-c
+run_in "$PRIMARY_REPO" "$BINARY" integration show integration
 run_in "$PRIMARY_REPO" "$BINARY" deps feature-c
 run_in "$PRIMARY_REPO" "$BINARY" update main feature-a
+run_in "$PRIMARY_REPO" "$BINARY" update --integration integration
 main_rev="$(cd "$PRIMARY_REPO" && git rev-parse main)"
 origin_main_rev="$(cd "$PRIMARY_REPO" && git rev-parse origin/main)"
 feature_a_rev="$(cd "$PRIMARY_REPO" && git rev-parse feature-a)"
@@ -126,6 +131,7 @@ run_in "$PRIMARY_REPO" "$BINARY" group remove sprint-42 feature-c
 run_in "$PRIMARY_REPO" "$BINARY" group list
 
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose --integration integration --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --create integration-preview --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --update integration-preview --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42 --dry-run
@@ -152,7 +158,7 @@ run_in "$PRIMARY_REPO" git add integration-preview-only.txt
 run_in "$PRIMARY_REPO" git commit -m "integration-preview-drift"
 run_in "$PRIMARY_REPO" git checkout feature-c
 integration_preview_before="$(cd "$PRIMARY_REPO" && git rev-parse integration-preview)"
-run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --update integration-preview
+run_in "$PRIMARY_REPO" "$BINARY" compose --integration integration --update integration-preview
 integration_preview_after="$(cd "$PRIMARY_REPO" && git rev-parse integration-preview)"
 if [[ "$integration_preview_before" == "$integration_preview_after" ]]; then
   echo "[smoke] expected integration-preview branch to change after update"
@@ -167,6 +173,8 @@ if [[ "$(cd "$PRIMARY_REPO" && git show integration-preview:feature-c.txt | tr -
   exit 1
 fi
 
+run_in "$PRIMARY_REPO" /bin/sh -c "\"$BINARY\" integration export integration --json > \"$INTEGRATION_FILE\""
+run_in "$PRIMARY_REPO" cat "$INTEGRATION_FILE"
 run_in "$PRIMARY_REPO" /bin/sh -c "\"$BINARY\" export > \"$STATE_FILE\""
 run_in "$PRIMARY_REPO" cat "$STATE_FILE"
 
@@ -177,11 +185,15 @@ run_in "$IMPORT_REPO" /bin/sh -c "echo imported > README.md"
 run_in "$IMPORT_REPO" git add README.md
 run_in "$IMPORT_REPO" git commit -m "init"
 run_in "$IMPORT_REPO" "$BINARY" init
+run_in "$IMPORT_REPO" "$BINARY" integration import "$INTEGRATION_FILE"
+run_in "$IMPORT_REPO" "$BINARY" integration show integration
 run_in "$IMPORT_REPO" "$BINARY" import "$STATE_FILE"
 run_in "$IMPORT_REPO" "$BINARY" deps feature-c
+run_in "$IMPORT_REPO" "$BINARY" integration show integration
 run_in "$IMPORT_REPO" "$BINARY" group list
 
 rm -f "$STATE_FILE"
+rm -f "$INTEGRATION_FILE"
 
 echo
 echo "[smoke] success"
