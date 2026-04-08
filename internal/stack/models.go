@@ -10,3 +10,9 @@ type StackNode struct {
 }
 
 type StackHealth string
+
+const (
+	HealthClean        StackHealth = "clean"
+	HealthNeedsRebase  StackHealth = "needs rebase"
+	HealthConflictRisk StackHealth = "conflict risk"
+)

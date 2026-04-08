@@ -46,3 +46,43 @@ func TestRenderTree(t *testing.T) {
 		t.Fatalf("RenderTree() = %q, want %q", got, want)
 	}
 }
+
+func TestRenderTreeSkipsBaseNode(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "main"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got := RenderTree(dag, "main")
+	want := "main\n`-- feature-b"
+	if got != want {
+		t.Fatalf("RenderTree() = %q, want %q", got, want)
+	}
+}
+
+func TestRenderStatusTree(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got := RenderStatusTree(dag, "main", map[string]stack.StackHealth{
+		"feature-a": stack.HealthClean,
+		"feature-b": stack.HealthNeedsRebase,
+		"feature-c": stack.HealthConflictRisk,
+	})
+
+	want := "main\n`-- feature-a  clean\n    `-- feature-b  needs rebase\n        `-- feature-c  conflict risk"
+	if got != want {
+		t.Fatalf("RenderStatusTree() = %q, want %q", got, want)
+	}
+}
