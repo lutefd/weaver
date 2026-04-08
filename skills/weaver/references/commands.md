@@ -26,6 +26,7 @@ weaver status
 
 ```bash
 weaver update main feature-a feature-b
+weaver update --integration integration
 weaver update --group sprint-42
 weaver update --all
 weaver sync
@@ -38,6 +39,7 @@ weaver abort
 
 ```bash
 weaver compose feature-c --dry-run
+weaver compose --integration integration --dry-run
 weaver compose feature-c --base main --create integration --dry-run
 weaver compose feature-c --base main --update integration --dry-run
 weaver compose feature-a feature-c feature-e
@@ -48,7 +50,18 @@ weaver compose feature-b feature-d --base main --create integration
 weaver compose feature-b feature-d --base main --update integration
 ```
 
-Selection rule: use exactly one of explicit branches, `--group`, or `--all`.
+Selection rule: use exactly one of explicit branches, `--group`, `--integration`, or `--all`.
+
+## Integrations
+
+```bash
+weaver integration save integration --base main feature-a feature-b feature-c
+weaver integration show integration
+weaver integration list
+weaver integration remove integration
+weaver integration export integration --json > integration.json
+weaver integration import integration.json
+```
 
 ## Groups
 

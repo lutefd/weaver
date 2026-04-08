@@ -1,6 +1,6 @@
 ---
 name: weaver
-description: Use when a user wants to inspect, diagnose, declare, refresh, rebase, compose, export, or import local Git branch stacks with the installed `weaver` CLI. Prefer this skill over raw `git` for stack-aware operations such as `stack`, `deps`, `status`, `doctor`, `update`, `sync`, `compose`, `group`, `export`, and `import`.
+description: Use when a user wants to inspect, diagnose, declare, refresh, rebase, compose, save integration strategies for, export, or import local Git branch stacks with the installed `weaver` CLI. Prefer this skill over raw `git` for stack-aware operations such as `stack`, `deps`, `status`, `doctor`, `update`, `sync`, `compose`, `integration`, `group`, `export`, and `import`.
 ---
 
 # Weaver
@@ -28,6 +28,7 @@ If `weaver` is missing, stop and tell the user it is not installed instead of gu
 - Refreshing local branches from their upstream refs
 - Rebasing an entire stack
 - Resuming or aborting a paused stack rebase
+- Saving and sharing named integration strategies
 - Creating and using compose groups
 - Composing multiple branches onto a detached base
 - Exporting or importing local Weaver state
@@ -47,6 +48,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 ### Rebase a stack
 
 - Use `weaver update ...` when the user wants to fetch remotes and fast-forward local branches to their upstream refs before any stack rebase.
+- Use `weaver update --integration <name>` when the branch set should follow a saved shared integration strategy.
 - Start with `weaver status` if the user wants to understand risk first.
 - Use `weaver sync [branch]` for the actual ordered rebase.
 - If a rebase pauses on conflicts, use `weaver continue` after resolution or `weaver abort` to restore the original branch.
@@ -54,14 +56,23 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 ### Compose branches
 
 - Prefer `weaver compose ... --dry-run` when the user wants preview or safety first.
-- Use one selection mode only: explicit branches, `--group`, or `--all`.
+- Use one selection mode only: explicit branches, `--group`, `--integration`, or `--all`.
 - Compose is ephemeral by default and should restore the original branch after completion.
+- If the user wants a reproducible shared integration recipe, save it first with `weaver integration save <name> --base <branch> <branch...>`.
+- Use `weaver compose --integration <name> ...` when the base and branch set should come from the saved strategy instead of being repeated manually.
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
 - If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.
 
+### Manage integration strategies
+
+- Use `weaver integration save <name> --base <branch> <branch...>` to create or update a reusable integration strategy.
+- Use `weaver integration show <name>` or `weaver integration list` to inspect saved strategies.
+- Use `weaver integration export <name> --json` to share one strategy directly.
+- Use `weaver integration import <file>` to restore one shared strategy in another clone.
+
 ### Handoff state
 
-- Use `weaver export` to serialize dependencies and groups.
+- Use `weaver export` to serialize dependencies, groups, and saved integrations.
 - Use `weaver import <file>` to restore them in another clone.
 
 ## Guardrails
@@ -69,6 +80,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Do not mix `weaver` stack operations with hand-edited `.git/weaver/*` files unless the user explicitly asks for manual repair.
 - Do not force-push as part of a Weaver workflow unless the user explicitly requests it.
 - If the user asks what Weaver will do without wanting changes yet, prefer read-only commands or `--dry-run`.
+- If `--integration` is selected, do not also invent a manual branch list or `--group` selection in the same command.
 - If a command fails because the repo lacks Weaver metadata, initialize with `weaver init` only when that matches the user’s intent.
 
 ## Reference
