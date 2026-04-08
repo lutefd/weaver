@@ -117,7 +117,32 @@ func TestResolveComposeOptions(t *testing.T) {
 	}
 
 	cmd = cloneComposeCommand()
+	cmd.Flags().Set("persist", "true")
+	cmd.Flags().Set("replace", "integration")
+	_, err = resolveComposeOptions(cmd, "main")
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
+	}
+
+	cmd = cloneComposeCommand()
+	cmd.Flags().Set("replace", "integration")
+	opts, err = resolveComposeOptions(cmd, "main")
+	if err != nil {
+		t.Fatalf("resolveComposeOptions() error = %v", err)
+	}
+	if opts.ReplaceBranch != "integration" || opts.CreateBranch != "" || opts.Persist {
+		t.Fatalf("resolveComposeOptions() = %#v, want replace opts", opts)
+	}
+
+	cmd = cloneComposeCommand()
 	cmd.Flags().Set("create", "main")
+	_, err = resolveComposeOptions(cmd, "main")
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
+	}
+
+	cmd = cloneComposeCommand()
+	cmd.Flags().Set("replace", "main")
 	_, err = resolveComposeOptions(cmd, "main")
 	if !errors.As(err, &usageErr) {
 		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
@@ -193,6 +218,7 @@ func cloneComposeCommand() *cobra.Command {
 	cmd.Flags().Bool("all", false, "all")
 	cmd.Flags().String("base", "", "base")
 	cmd.Flags().String("create", "", "create")
+	cmd.Flags().String("replace", "", "replace")
 	cmd.Flags().Bool("dry-run", false, "dry-run")
 	cmd.Flags().Bool("persist", false, "persist")
 	return cmd

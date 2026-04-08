@@ -37,16 +37,18 @@ weaver abort
 ```bash
 weaver compose feature-c --dry-run
 weaver compose feature-c --base main --create integration --dry-run
-weaver compose feature-c --base integration --persist --dry-run
+weaver compose feature-c --base main --replace integration --dry-run
 weaver compose feature-a feature-c feature-e
 weaver compose --group sprint-42
 weaver compose --group sprint-42 --dry-run
 weaver compose --all
 weaver compose feature-b feature-d --base main --create integration
-weaver compose feature-b feature-d --base integration --persist
+weaver compose feature-b feature-d --base main --replace integration
 ```
 
 Selection rule: use exactly one of explicit branches, `--group`, or `--all`.
+
+`weaver compose ... --persist` still exists for the narrow case where you intentionally want to move the base branch itself, but it is deprecated for integration-branch workflows.
 
 ## Groups
 

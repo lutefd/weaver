@@ -14,9 +14,10 @@ type Composer interface {
 }
 
 type ComposeOpts struct {
-	DryRun       bool
-	Persist      bool
-	CreateBranch string
+	DryRun        bool
+	Persist       bool
+	CreateBranch  string
+	ReplaceBranch string
 }
 
 type ComposeResult struct {
@@ -26,6 +27,7 @@ type ComposeResult struct {
 	DryRun         bool
 	Persisted      bool
 	CreatedBranch  string
+	ReplacedBranch string
 }
 
 type ConflictError struct {
@@ -50,8 +52,18 @@ func New(runner gitrunner.Runner) *Engine {
 }
 
 func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string, base string, opts ComposeOpts) (*ComposeResult, error) {
-	if opts.Persist && opts.CreateBranch != "" {
-		return nil, fmt.Errorf("cannot use persist and create branch together")
+	writeModes := 0
+	if opts.Persist {
+		writeModes++
+	}
+	if opts.CreateBranch != "" {
+		writeModes++
+	}
+	if opts.ReplaceBranch != "" {
+		writeModes++
+	}
+	if writeModes > 1 {
+		return nil, fmt.Errorf("cannot combine persist, create branch, and replace branch modes")
 	}
 
 	order, err := resolveComposeOrder(dag, branches, base)
@@ -60,11 +72,12 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 	}
 
 	result := &ComposeResult{
-		BaseBranch:    base,
-		Order:         order,
-		DryRun:        opts.DryRun,
-		Persisted:     opts.Persist && !opts.DryRun,
-		CreatedBranch: opts.CreateBranch,
+		BaseBranch:     base,
+		Order:          order,
+		DryRun:         opts.DryRun,
+		Persisted:      opts.Persist && !opts.DryRun,
+		CreatedBranch:  opts.CreateBranch,
+		ReplacedBranch: opts.ReplaceBranch,
 	}
 	if opts.DryRun {
 		return result, nil
@@ -90,6 +103,11 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 
 	if opts.CreateBranch != "" {
 		if _, err := e.runner.Run(ctx, "branch", opts.CreateBranch, "HEAD"); err != nil {
+			_ = restoreBranch(ctx, e.runner, originalBranch)
+			return nil, err
+		}
+	} else if opts.ReplaceBranch != "" {
+		if _, err := e.runner.Run(ctx, "branch", "-f", opts.ReplaceBranch, "HEAD"); err != nil {
 			_ = restoreBranch(ctx, e.runner, originalBranch)
 			return nil, err
 		}

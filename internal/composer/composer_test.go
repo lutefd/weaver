@@ -181,7 +181,48 @@ func TestComposeCreatesNewBranchWhenRequested(t *testing.T) {
 	}
 }
 
-func TestComposeRejectsPersistAndCreateTogether(t *testing.T) {
+func TestComposeReplacesBranchWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	runner := &composeRunner{
+		results: map[string]gitrunner.Result{
+			"branch --show-current": {Stdout: "topic"},
+		},
+	}
+	got, err := New(runner).Compose(context.Background(), dag, []string{"feature-b"}, "main", ComposeOpts{ReplaceBranch: "integration"})
+	if err != nil {
+		t.Fatalf("Compose() error = %v", err)
+	}
+	want := &ComposeResult{
+		OriginalBranch: "topic",
+		BaseBranch:     "main",
+		Order:          []string{"feature-a", "feature-b"},
+		Persisted:      false,
+		ReplacedBranch: "integration",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Compose() = %#v, want %#v", got, want)
+	}
+
+	wantCalls := []string{
+		"branch --show-current",
+		"checkout --detach main",
+		"merge --no-ff --no-edit feature-a",
+		"merge --no-ff --no-edit feature-b",
+		"branch -f integration HEAD",
+		"checkout topic",
+	}
+	if !reflect.DeepEqual(runner.calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, wantCalls)
+	}
+}
+
+func TestComposeRejectsCombinedWriteModes(t *testing.T) {
 	t.Parallel()
 
 	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-a", Parent: "main"}})
@@ -190,14 +231,15 @@ func TestComposeRejectsPersistAndCreateTogether(t *testing.T) {
 	}
 
 	_, err = New(&composeRunner{}).Compose(context.Background(), dag, []string{"feature-a"}, "main", ComposeOpts{
-		Persist:      true,
-		CreateBranch: "integration",
+		Persist:       true,
+		CreateBranch:  "integration",
+		ReplaceBranch: "integration-preview",
 	})
 	if err == nil {
 		t.Fatal("Compose() error = nil, want error")
 	}
-	if !strings.Contains(err.Error(), "cannot use persist and create branch together") {
-		t.Fatalf("Compose() error = %v, want persist/create validation", err)
+	if !strings.Contains(err.Error(), "cannot combine persist, create branch, and replace branch modes") {
+		t.Fatalf("Compose() error = %v, want write mode validation", err)
 	}
 }
 

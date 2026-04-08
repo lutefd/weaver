@@ -126,7 +126,7 @@ run_in "$PRIMARY_REPO" "$BINARY" group list
 
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --create integration-preview --dry-run
-run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base integration --persist --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --replace integration-preview --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42 --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --all --dry-run
 
@@ -145,11 +145,24 @@ if ! (cd "$PRIMARY_REPO" && git show-ref --verify --quiet refs/heads/integration
   echo "[smoke] expected integration-preview branch to be created"
   exit 1
 fi
-run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base integration --persist
-integration_chain="$(cd "$PRIMARY_REPO" && git rev-list --count integration ^main)"
-echo "[smoke] integration-only commits after persist: $integration_chain"
-if [[ "$integration_chain" -le 0 ]]; then
-  echo "[smoke] expected integration branch to advance"
+run_in "$PRIMARY_REPO" git checkout integration-preview
+run_in "$PRIMARY_REPO" /bin/sh -c "echo stale > integration-preview-only.txt"
+run_in "$PRIMARY_REPO" git add integration-preview-only.txt
+run_in "$PRIMARY_REPO" git commit -m "integration-preview-drift"
+run_in "$PRIMARY_REPO" git checkout feature-c
+integration_preview_before="$(cd "$PRIMARY_REPO" && git rev-parse integration-preview)"
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --replace integration-preview
+integration_preview_after="$(cd "$PRIMARY_REPO" && git rev-parse integration-preview)"
+if [[ "$integration_preview_before" == "$integration_preview_after" ]]; then
+  echo "[smoke] expected integration-preview branch to change after replace"
+  exit 1
+fi
+if (cd "$PRIMARY_REPO" && git cat-file -e integration-preview:integration-preview-only.txt 2>/dev/null); then
+  echo "[smoke] expected replace to drop integration-preview-only.txt"
+  exit 1
+fi
+if [[ "$(cd "$PRIMARY_REPO" && git show integration-preview:feature-c.txt | tr -d '\n')" != "feature-c" ]]; then
+  echo "[smoke] expected integration-preview to include feature-c after replace"
   exit 1
 fi
 

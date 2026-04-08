@@ -129,28 +129,6 @@ func TestComposeEphemeralIntegration(t *testing.T) {
 	}
 }
 
-func TestComposePersistIntegration(t *testing.T) {
-	repo := setupComposeRepo(t)
-	before := revParse(t, repo, "integration")
-
-	result := weaver(t, repo, "compose", "feature-b", "--base", "integration", "--persist")
-	if !strings.Contains(result.Output, "updated integration with: feature-a -> feature-b") {
-		t.Fatalf("compose output = %q", result.Output)
-	}
-	assertCurrentBranch(t, repo, "feature-b")
-
-	after := revParse(t, repo, "integration")
-	if before == after {
-		t.Fatalf("integration did not change")
-	}
-	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "feature-a.txt")); got != "feature-a" {
-		t.Fatalf("integration feature-a.txt = %q, want feature-a", got)
-	}
-	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "feature-b.txt")); got != "feature-b" {
-		t.Fatalf("integration feature-b.txt = %q, want feature-b", got)
-	}
-}
-
 func TestComposeCreateIntegration(t *testing.T) {
 	repo := setupComposeRepo(t)
 	integrationBefore := revParse(t, repo, "integration")
@@ -168,6 +146,73 @@ func TestComposeCreateIntegration(t *testing.T) {
 	}
 	if integrationBefore != revParse(t, repo, "integration") {
 		t.Fatalf("integration changed during --create compose")
+	}
+}
+
+func TestComposeReplaceIntegrationRebuildsFromBase(t *testing.T) {
+	repo := initGitRepo(t)
+	writeRepoFile(t, repo, "README.md", "base\n")
+	git(t, repo, "add", "README.md")
+	git(t, repo, "commit", "-m", "init")
+	git(t, repo, "branch", "integration")
+
+	git(t, repo, "checkout", "-b", "feature-a", "main")
+	writeRepoFile(t, repo, "feature-a.txt", "feature-a\n")
+	git(t, repo, "add", "feature-a.txt")
+	git(t, repo, "commit", "-m", "feature-a")
+
+	git(t, repo, "checkout", "-b", "feature-b")
+	writeRepoFile(t, repo, "feature-b.txt", "feature-b\n")
+	git(t, repo, "add", "feature-b.txt")
+	git(t, repo, "commit", "-m", "feature-b")
+
+	weaver(t, repo, "init")
+	weaver(t, repo, "stack", "feature-a", "--on", "main")
+	weaver(t, repo, "stack", "feature-b", "--on", "feature-a")
+	git(t, repo, "checkout", "feature-b")
+
+	seedResult := weaver(t, repo, "compose", "feature-b", "--base", "main", "--replace", "integration")
+	if !strings.Contains(seedResult.Output, "replaced integration from main with: feature-a -> feature-b") {
+		t.Fatalf("compose output = %q", seedResult.Output)
+	}
+
+	git(t, repo, "checkout", "integration")
+	writeRepoFile(t, repo, "integration-only.txt", "stale\n")
+	git(t, repo, "add", "integration-only.txt")
+	git(t, repo, "commit", "-m", "integration drift")
+	driftedIntegration := revParse(t, repo, "integration")
+
+	git(t, repo, "checkout", "main")
+	writeRepoFile(t, repo, "main.txt", "main-update\n")
+	git(t, repo, "add", "main.txt")
+	git(t, repo, "commit", "-m", "main-update")
+
+	git(t, repo, "checkout", "feature-b")
+	syncResult := weaver(t, repo, "sync", "feature-b")
+	if !strings.Contains(syncResult.Output, "synced feature-b") {
+		t.Fatalf("sync output = %q", syncResult.Output)
+	}
+
+	result := weaver(t, repo, "compose", "feature-b", "--base", "main", "--replace", "integration")
+	if !strings.Contains(result.Output, "replaced integration from main with: feature-a -> feature-b") {
+		t.Fatalf("compose output = %q", result.Output)
+	}
+	assertCurrentBranch(t, repo, "feature-b")
+
+	if after := revParse(t, repo, "integration"); after == driftedIntegration {
+		t.Fatalf("integration did not change after replace")
+	}
+	if fileExistsAtRef(t, repo, "integration", "integration-only.txt") {
+		t.Fatal("integration-only.txt still present after replace")
+	}
+	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "main.txt")); got != "main-update" {
+		t.Fatalf("integration main.txt = %q, want main-update", got)
+	}
+	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "feature-a.txt")); got != "feature-a" {
+		t.Fatalf("integration feature-a.txt = %q, want feature-a", got)
+	}
+	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "feature-b.txt")); got != "feature-b" {
+		t.Fatalf("integration feature-b.txt = %q, want feature-b", got)
 	}
 }
 
@@ -379,4 +424,11 @@ func revParse(t *testing.T, repo string, ref string) string {
 func showFileAtRef(t *testing.T, repo string, ref string, path string) string {
 	t.Helper()
 	return git(t, repo, "show", ref+":"+path)
+}
+
+func fileExistsAtRef(t *testing.T, repo string, ref string, path string) bool {
+	t.Helper()
+
+	result, err := runCommand(repo, "git", "cat-file", "-e", ref+":"+path)
+	return err == nil && result.ExitCode == 0
 }
