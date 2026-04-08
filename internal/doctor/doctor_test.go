@@ -128,6 +128,81 @@ func TestCheckerReportsConfigErrorAndBrokenRebaseState(t *testing.T) {
 	}
 }
 
+func TestCheckerReportsUpstreamDrift(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "origin.git")
+	runGit(t, root, "init", "--bare", "-b", "main", remote)
+
+	seed := filepath.Join(root, "seed")
+	runGit(t, root, "clone", remote, seed)
+	runGit(t, seed, "config", "user.name", "Doctor Test")
+	runGit(t, seed, "config", "user.email", "doctor@example.com")
+	writeRepoFile(t, seed, "README.md", "base\n")
+	runGit(t, seed, "add", "README.md")
+	runGit(t, seed, "commit", "-m", "init")
+	runGit(t, seed, "push", "-u", "origin", "main")
+	runGit(t, seed, "checkout", "-b", "feature-a")
+	writeRepoFile(t, seed, "feature-a.txt", "v1\n")
+	runGit(t, seed, "add", "feature-a.txt")
+	runGit(t, seed, "commit", "-m", "feature-a v1")
+	runGit(t, seed, "push", "-u", "origin", "feature-a")
+
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "clone", remote, repo)
+	runGit(t, repo, "config", "user.name", "Doctor Test")
+	runGit(t, repo, "config", "user.email", "doctor@example.com")
+	runGit(t, repo, "checkout", "-b", "feature-a", "--track", "origin/feature-a")
+	runGit(t, repo, "checkout", "main")
+
+	upstream := filepath.Join(root, "upstream")
+	runGit(t, root, "clone", remote, upstream)
+	runGit(t, upstream, "config", "user.name", "Doctor Test")
+	runGit(t, upstream, "config", "user.email", "doctor@example.com")
+
+	runGit(t, upstream, "checkout", "main")
+	writeRepoFile(t, upstream, "README.md", "base\nremote-main\n")
+	runGit(t, upstream, "add", "README.md")
+	runGit(t, upstream, "commit", "-m", "main v2")
+	runGit(t, upstream, "push", "origin", "main")
+
+	runGit(t, upstream, "checkout", "feature-a")
+	writeRepoFile(t, upstream, "feature-a.txt", "v2-remote\n")
+	runGit(t, upstream, "add", "feature-a.txt")
+	runGit(t, upstream, "commit", "-m", "feature-a remote")
+	runGit(t, upstream, "push", "origin", "feature-a")
+
+	runGit(t, repo, "fetch", "--all")
+	runGit(t, repo, "checkout", "feature-a")
+	writeRepoFile(t, repo, "feature-a.txt", "v2-local\n")
+	runGit(t, repo, "add", "feature-a.txt")
+	runGit(t, repo, "commit", "-m", "feature-a local")
+	runGit(t, repo, "checkout", "main")
+
+	if _, err := config.Initialize(repo); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if err := deps.NewLocalSource(repo).Set(context.Background(), "feature-a", "main"); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	cfg := config.Default()
+	report, err := New(gitrunner.NewCLIRunner(repo, nil), &cfg, nil).Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !report.HasFailures() {
+		t.Fatal("Run() should report upstream divergence as a failure")
+	}
+	if !containsMessage(report, `branch "main" is behind`) {
+		t.Fatalf("Run() messages = %#v, want behind warning for main", report.Checks)
+	}
+	if !containsMessage(report, `branch "feature-a" has diverged`) {
+		t.Fatalf("Run() messages = %#v, want divergence failure for feature-a", report.Checks)
+	}
+}
+
 func containsMessage(report *Report, fragment string) bool {
 	for _, check := range report.Checks {
 		if strings.Contains(check.Message, fragment) {

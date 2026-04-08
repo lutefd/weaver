@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/lutefd/weaver/internal/config"
@@ -120,6 +121,7 @@ func (c *Checker) Run(ctx context.Context) (*Report, error) {
 	c.checkCurrentBranch(ctx, report)
 	c.checkWorkingTree(ctx, report)
 	c.checkGitOperations(ctx, report)
+	c.checkUpstreams(ctx, report, trackedBranches)
 
 	return report, nil
 }
@@ -185,6 +187,54 @@ func (c *Checker) checkBaseBranch(ctx context.Context, report *Report) {
 	}
 
 	report.add(LevelOK, "base_branch", "configured base branch exists locally: %s", base)
+}
+
+func (c *Checker) checkUpstreams(ctx context.Context, report *Report, tracked map[string]struct{}) {
+	if len(tracked) == 0 {
+		return
+	}
+
+	branches := make([]string, 0, len(tracked))
+	for branch := range tracked {
+		if branch == "" {
+			continue
+		}
+		branches = append(branches, branch)
+	}
+	sort.Strings(branches)
+
+	for _, branch := range branches {
+		exists, err := c.branchExists(ctx, branch)
+		if err != nil || !exists {
+			continue
+		}
+
+		upstream, hasUpstream, err := c.upstreamForBranch(ctx, branch)
+		if err != nil {
+			report.addHint(LevelFail, "upstream", "check local branch configuration and upstream refs", "cannot inspect upstream for %q: %v", branch, err)
+			continue
+		}
+		if !hasUpstream {
+			continue
+		}
+
+		ahead, behind, err := c.aheadBehind(ctx, branch, upstream)
+		if err != nil {
+			report.addHint(LevelFail, "upstream", "check remote refs with `git fetch --all` and inspect branch history", "cannot compare %q with %q: %v", branch, upstream, err)
+			continue
+		}
+
+		switch {
+		case ahead == 0 && behind == 0:
+			report.add(LevelOK, "upstream", "branch %q is up to date with %s", branch, upstream)
+		case ahead > 0 && behind == 0:
+			report.add(LevelWarn, "upstream", "branch %q is ahead of %s by %d commit(s)", branch, upstream, ahead)
+		case ahead == 0 && behind > 0:
+			report.add(LevelWarn, "upstream", "branch %q is behind %s by %d commit(s)", branch, upstream, behind)
+		default:
+			report.addHint(LevelFail, "upstream", fmt.Sprintf("run `weaver update %s` if you want the remote changes locally, then rebase or reconcile the local commits", branch), "branch %q has diverged from %s (%d ahead, %d behind)", branch, upstream, ahead, behind)
+		}
+	}
 }
 
 func (c *Checker) checkDependencies(ctx context.Context, report *Report, tracked map[string]struct{}) {
@@ -401,4 +451,46 @@ func (c *Checker) currentBranch(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return result.Stdout, nil
+}
+
+func (c *Checker) upstreamForBranch(ctx context.Context, branch string) (string, bool, error) {
+	result, err := c.runner.Run(ctx, "for-each-ref", "--format=%(refname:short)%09%(upstream:short)", "refs/heads/"+branch)
+	if err != nil {
+		return "", false, err
+	}
+	if result.Stdout == "" {
+		return "", false, nil
+	}
+
+	parts := strings.SplitN(result.Stdout, "\t", 2)
+	if len(parts) == 0 || parts[0] == "" {
+		return "", false, nil
+	}
+	if len(parts) < 2 || parts[1] == "" {
+		return "", false, nil
+	}
+
+	return parts[1], true, nil
+}
+
+func (c *Checker) aheadBehind(ctx context.Context, branch string, upstream string) (int, int, error) {
+	result, err := c.runner.Run(ctx, "rev-list", "--left-right", "--count", branch+"..."+upstream)
+	if err != nil {
+		return 0, 0, err
+	}
+	parts := strings.Fields(result.Stdout)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected ahead/behind output %q", result.Stdout)
+	}
+
+	ahead, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse ahead count %q: %w", parts[0], err)
+	}
+	behind, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse behind count %q: %w", parts[1], err)
+	}
+
+	return ahead, behind, nil
 }
