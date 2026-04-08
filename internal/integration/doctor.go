@@ -141,7 +141,7 @@ func (a *Analyzer) Analyze(ctx context.Context, dag *stack.DAG, name string, rec
 			}
 		}
 
-		if err := a.checkBranch(ctx, report, dag, name, branch, parent, order); err != nil {
+		if err := a.checkBranch(ctx, report, dag, name, recipe.Base, branch, parent, order); err != nil {
 			return nil, err
 		}
 	}
@@ -149,7 +149,7 @@ func (a *Analyzer) Analyze(ctx context.Context, dag *stack.DAG, name string, rec
 	return report, nil
 }
 
-func (a *Analyzer) checkBranch(ctx context.Context, report *Report, dag *stack.DAG, integrationName, branch, parent string, order []string) error {
+func (a *Analyzer) checkBranch(ctx context.Context, report *Report, dag *stack.DAG, integrationName, base, branch, parent string, order []string) error {
 	mergeBase, err := a.rev(ctx, "merge-base", branch, parent)
 	if err != nil {
 		return err
@@ -185,13 +185,13 @@ func (a *Analyzer) checkBranch(ctx context.Context, report *Report, dag *stack.D
 		}
 	}
 
-	if mergeCommits, err := a.mergeCommits(ctx, parent, branch); err != nil {
+	if mergeCommits, err := a.suspiciousMergeCommits(ctx, base, parent, branch, order); err != nil {
 		return err
 	} else if len(mergeCommits) > 0 {
-		report.addHint(LevelWarn, "merge_commits", manualMergeHint(integrationName, branch), `branch %q contains merge commits beyond %q (%s)`, branch, parent, strings.Join(shortRefs(mergeCommits), ", "))
+		report.addHint(LevelWarn, "merge_commits", manualMergeHint(integrationName, branch), `branch %q contains merge commits from outside %q or the integration base (%s)`, branch, parent, strings.Join(shortRefs(mergeCommits), ", "))
 	}
 
-	foreignCommit, foreignBranch, err := a.findSharedForeignCommit(ctx, dag, branch, parent, order)
+	foreignCommit, foreignBranch, err := a.findSharedForeignCommit(ctx, dag, branch, parent, base, order)
 	if err != nil {
 		return err
 	}
@@ -264,7 +264,86 @@ func (a *Analyzer) mergeCommits(ctx context.Context, parent, branch string) ([]s
 	return strings.Fields(result.Stdout), nil
 }
 
-func (a *Analyzer) findSharedForeignCommit(ctx context.Context, dag *stack.DAG, branch, parent string, order []string) (string, string, error) {
+func (a *Analyzer) suspiciousMergeCommits(ctx context.Context, base, parent, branch string, order []string) ([]string, error) {
+	mergeCommits, err := a.mergeCommits(ctx, parent, branch)
+	if err != nil {
+		return nil, err
+	}
+
+	suspicious := make([]string, 0, len(mergeCommits))
+	for _, commit := range mergeCommits {
+		parents, err := a.commitParents(ctx, commit)
+		if err != nil {
+			return nil, err
+		}
+		if len(parents) <= 1 {
+			continue
+		}
+		safe, err := a.secondaryParentsAreSafe(ctx, parents[1:], base, parent, branch, order)
+		if err != nil {
+			return nil, err
+		}
+		if !safe {
+			suspicious = append(suspicious, commit)
+		}
+	}
+
+	return suspicious, nil
+}
+
+func (a *Analyzer) commitParents(ctx context.Context, commit string) ([]string, error) {
+	result, err := a.runner.Run(ctx, "rev-list", "--parents", "-n", "1", commit)
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(result.Stdout)
+	if len(fields) <= 1 {
+		return nil, nil
+	}
+	return fields[1:], nil
+}
+
+func (a *Analyzer) secondaryParentsAreSafe(ctx context.Context, parents []string, base, expectedParent, branch string, order []string) (bool, error) {
+	safeRefs := make([]string, 0, len(order)+2)
+	safeRefs = append(safeRefs, base, expectedParent)
+	for _, candidate := range order {
+		if candidate == branch {
+			continue
+		}
+		safeRefs = append(safeRefs, candidate)
+	}
+
+	for _, parent := range parents {
+		ok, err := a.isAncestorOfAny(ctx, parent, safeRefs)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (a *Analyzer) isAncestorOfAny(ctx context.Context, commit string, refs []string) (bool, error) {
+	for _, ref := range refs {
+		if ref == "" {
+			continue
+		}
+		result, err := a.runner.Run(ctx, "merge-base", "--is-ancestor", commit, ref)
+		if err != nil {
+			if result.ExitCode == 1 {
+				continue
+			}
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (a *Analyzer) findSharedForeignCommit(ctx context.Context, dag *stack.DAG, branch, parent, base string, order []string) (string, string, error) {
 	commits, err := a.branchRange(ctx, parent, branch)
 	if err != nil {
 		return "", "", err
@@ -281,6 +360,13 @@ func (a *Analyzer) findSharedForeignCommit(ctx context.Context, dag *stack.DAG, 
 			continue
 		}
 		for _, commit := range commits {
+			safe, err := a.isAncestorOfAny(ctx, commit, []string{base, parent})
+			if err != nil {
+				return "", "", err
+			}
+			if safe {
+				continue
+			}
 			result, err := a.runner.Run(ctx, "merge-base", "--is-ancestor", commit, other)
 			if err != nil {
 				if result.ExitCode == 1 {

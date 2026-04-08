@@ -130,6 +130,89 @@ func TestAnalyzerDetectsLargeDrift(t *testing.T) {
 	}
 }
 
+func TestAnalyzerIgnoresBaseSyncMergeCommits(t *testing.T) {
+	t.Parallel()
+
+	repo := initRepo(t)
+	writeRepoFile(t, repo, "README.md", "base\n")
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+
+	runGit(t, repo, "checkout", "-b", "feature-a")
+	writeRepoFile(t, repo, "feature-a.txt", "feature-a\n")
+	runGit(t, repo, "add", "feature-a.txt")
+	runGit(t, repo, "commit", "-m", "feature-a")
+
+	runGit(t, repo, "checkout", "main")
+	writeRepoFile(t, repo, "main.txt", "main-update\n")
+	runGit(t, repo, "add", "main.txt")
+	runGit(t, repo, "commit", "-m", "main-update")
+
+	runGit(t, repo, "checkout", "feature-a")
+	runGit(t, repo, "merge", "--no-ff", "-m", "merge main", "main")
+
+	dag, err := stack.NewDAG(nil)
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	report, err := NewAnalyzer(gitrunner.NewCLIRunner(repo, nil)).Analyze(context.Background(), dag, "integration", Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if report.HasFailures() {
+		t.Fatalf("Analyze() failures = %#v", report.Checks)
+	}
+	if report.Summary.Warn != 0 {
+		t.Fatalf("Analyze() warnings = %d, want 0 (%#v)", report.Summary.Warn, report.Checks)
+	}
+}
+
+func TestAnalyzerWarnsOnForeignMergeCommit(t *testing.T) {
+	t.Parallel()
+
+	repo := initRepo(t)
+	writeRepoFile(t, repo, "README.md", "base\n")
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+
+	runGit(t, repo, "checkout", "-b", "feature-a")
+	writeRepoFile(t, repo, "feature-a.txt", "feature-a\n")
+	runGit(t, repo, "add", "feature-a.txt")
+	runGit(t, repo, "commit", "-m", "feature-a")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "checkout", "-b", "feature-side")
+	writeRepoFile(t, repo, "feature-side.txt", "feature-side\n")
+	runGit(t, repo, "add", "feature-side.txt")
+	runGit(t, repo, "commit", "-m", "feature-side")
+
+	runGit(t, repo, "checkout", "feature-a")
+	runGit(t, repo, "merge", "--no-ff", "-m", "merge feature-side", "feature-side")
+
+	dag, err := stack.NewDAG(nil)
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	report, err := NewAnalyzer(gitrunner.NewCLIRunner(repo, nil)).Analyze(context.Background(), dag, "integration", Recipe{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if report.Summary.Warn == 0 {
+		t.Fatalf("Analyze() warnings = %d, want warning (%#v)", report.Summary.Warn, report.Checks)
+	}
+	if !containsMessage(report, "contains merge commits from outside") {
+		t.Fatalf("Analyze() checks = %#v, want suspicious merge warning", report.Checks)
+	}
+}
+
 func containsMessage(report *Report, fragment string) bool {
 	for _, check := range report.Checks {
 		if strings.Contains(check.Message, fragment) {

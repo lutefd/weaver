@@ -157,7 +157,7 @@ var integrationExportCmd = &cobra.Command{
 
 var integrationDoctorCmd = &cobra.Command{
 	Use:   "doctor <name>",
-	Short: "Inspect one saved integration compose strategy for drift and foreign ancestry",
+	Short: "Inspect one saved integration compose strategy for drift, foreign ancestry, and suspicious merges",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
