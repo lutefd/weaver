@@ -106,6 +106,7 @@ run_in "$PRIMARY_REPO" "$BINARY" stack feature-b --on feature-a
 run_in "$PRIMARY_REPO" "$BINARY" stack feature-c --on feature-b
 run_in "$PRIMARY_REPO" "$BINARY" integration save integration --base main feature-a feature-b feature-c
 run_in "$PRIMARY_REPO" "$BINARY" integration show integration
+run_in "$PRIMARY_REPO" "$BINARY" integration doctor integration
 run_in "$PRIMARY_REPO" "$BINARY" deps feature-c
 run_in "$PRIMARY_REPO" "$BINARY" update main feature-a
 run_in "$PRIMARY_REPO" "$BINARY" update --integration integration
@@ -132,6 +133,7 @@ run_in "$PRIMARY_REPO" "$BINARY" group list
 
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --integration integration --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose --integration integration --create integration-preview --skip feature-c --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --create integration-preview --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base main --update integration-preview --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42 --dry-run
