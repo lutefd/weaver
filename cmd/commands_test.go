@@ -103,35 +103,27 @@ func TestResolveComposeOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveComposeOptions() error = %v", err)
 	}
-	if !opts.DryRun || opts.CreateBranch != "integration" || opts.Persist {
+	if !opts.DryRun || opts.CreateBranch != "integration" || opts.UpdateBranch != "" {
 		t.Fatalf("resolveComposeOptions() = %#v, want dry-run create opts", opts)
 	}
 
 	cmd = cloneComposeCommand()
-	cmd.Flags().Set("persist", "true")
-	cmd.Flags().Set("create", "integration")
-	_, err = resolveComposeOptions(cmd, "main")
-	var usageErr usageError
-	if !errors.As(err, &usageErr) {
-		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
-	}
-
-	cmd = cloneComposeCommand()
-	cmd.Flags().Set("persist", "true")
-	cmd.Flags().Set("replace", "integration")
-	_, err = resolveComposeOptions(cmd, "main")
-	if !errors.As(err, &usageErr) {
-		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
-	}
-
-	cmd = cloneComposeCommand()
-	cmd.Flags().Set("replace", "integration")
+	cmd.Flags().Set("update", "integration")
 	opts, err = resolveComposeOptions(cmd, "main")
 	if err != nil {
 		t.Fatalf("resolveComposeOptions() error = %v", err)
 	}
-	if opts.ReplaceBranch != "integration" || opts.CreateBranch != "" || opts.Persist {
-		t.Fatalf("resolveComposeOptions() = %#v, want replace opts", opts)
+	if opts.UpdateBranch != "integration" || opts.CreateBranch != "" {
+		t.Fatalf("resolveComposeOptions() = %#v, want update opts", opts)
+	}
+
+	cmd = cloneComposeCommand()
+	cmd.Flags().Set("update", "integration")
+	cmd.Flags().Set("create", "integration-preview")
+	_, err = resolveComposeOptions(cmd, "main")
+	var usageErr usageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
 	}
 
 	cmd = cloneComposeCommand()
@@ -142,7 +134,7 @@ func TestResolveComposeOptions(t *testing.T) {
 	}
 
 	cmd = cloneComposeCommand()
-	cmd.Flags().Set("replace", "main")
+	cmd.Flags().Set("update", "main")
 	_, err = resolveComposeOptions(cmd, "main")
 	if !errors.As(err, &usageErr) {
 		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
@@ -218,9 +210,8 @@ func cloneComposeCommand() *cobra.Command {
 	cmd.Flags().Bool("all", false, "all")
 	cmd.Flags().String("base", "", "base")
 	cmd.Flags().String("create", "", "create")
-	cmd.Flags().String("replace", "", "replace")
+	cmd.Flags().String("update", "", "update")
 	cmd.Flags().Bool("dry-run", false, "dry-run")
-	cmd.Flags().Bool("persist", false, "persist")
 	return cmd
 }
 

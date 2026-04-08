@@ -14,10 +14,9 @@ type Composer interface {
 }
 
 type ComposeOpts struct {
-	DryRun        bool
-	Persist       bool
-	CreateBranch  string
-	ReplaceBranch string
+	DryRun       bool
+	CreateBranch string
+	UpdateBranch string
 }
 
 type ComposeResult struct {
@@ -25,9 +24,8 @@ type ComposeResult struct {
 	BaseBranch     string
 	Order          []string
 	DryRun         bool
-	Persisted      bool
 	CreatedBranch  string
-	ReplacedBranch string
+	UpdatedBranch  string
 }
 
 type ConflictError struct {
@@ -53,17 +51,14 @@ func New(runner gitrunner.Runner) *Engine {
 
 func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string, base string, opts ComposeOpts) (*ComposeResult, error) {
 	writeModes := 0
-	if opts.Persist {
-		writeModes++
-	}
 	if opts.CreateBranch != "" {
 		writeModes++
 	}
-	if opts.ReplaceBranch != "" {
+	if opts.UpdateBranch != "" {
 		writeModes++
 	}
 	if writeModes > 1 {
-		return nil, fmt.Errorf("cannot combine persist, create branch, and replace branch modes")
+		return nil, fmt.Errorf("cannot combine create branch and update branch modes")
 	}
 
 	order, err := resolveComposeOrder(dag, branches, base)
@@ -72,12 +67,11 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 	}
 
 	result := &ComposeResult{
-		BaseBranch:     base,
-		Order:          order,
-		DryRun:         opts.DryRun,
-		Persisted:      opts.Persist && !opts.DryRun,
-		CreatedBranch:  opts.CreateBranch,
-		ReplacedBranch: opts.ReplaceBranch,
+		BaseBranch:    base,
+		Order:         order,
+		DryRun:        opts.DryRun,
+		CreatedBranch: opts.CreateBranch,
+		UpdatedBranch: opts.UpdateBranch,
 	}
 	if opts.DryRun {
 		return result, nil
@@ -106,13 +100,8 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 			_ = restoreBranch(ctx, e.runner, originalBranch)
 			return nil, err
 		}
-	} else if opts.ReplaceBranch != "" {
-		if _, err := e.runner.Run(ctx, "branch", "-f", opts.ReplaceBranch, "HEAD"); err != nil {
-			_ = restoreBranch(ctx, e.runner, originalBranch)
-			return nil, err
-		}
-	} else if opts.Persist {
-		if _, err := e.runner.Run(ctx, "branch", "-f", base, "HEAD"); err != nil {
+	} else if opts.UpdateBranch != "" {
+		if _, err := e.runner.Run(ctx, "branch", "-f", opts.UpdateBranch, "HEAD"); err != nil {
 			_ = restoreBranch(ctx, e.runner, originalBranch)
 			return nil, err
 		}

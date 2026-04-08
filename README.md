@@ -28,7 +28,7 @@ weaver update [branch...] [--group NAME | --all]
 weaver sync [branch]
 weaver continue
 weaver abort
-weaver compose [branch...] [--group NAME | --all] [--base BRANCH] [--create BRANCH | --replace BRANCH | --persist (deprecated)] [--dry-run]
+weaver compose [branch...] [--group NAME | --all] [--base BRANCH] [--create BRANCH | --update BRANCH] [--dry-run]
 weaver group create <name> <branch...>
 weaver group add <name> <branch...>
 weaver group remove <name> [branch...]
@@ -84,7 +84,7 @@ Compose it:
 ./bin/weaver compose feature-c --dry-run
 ./bin/weaver compose feature-c
 ./bin/weaver compose feature-c --base main --create integration
-./bin/weaver compose feature-c --base main --replace integration
+./bin/weaver compose feature-c --base main --update integration
 ```
 
 ## Files and State
@@ -107,8 +107,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - `weaver abort` restores the original branch.
 - `weaver compose` is ephemeral by default.
 - `weaver compose --create <branch>` creates a new integration branch from the composed result.
-- `weaver compose --replace <branch>` rebuilds an integration branch from the clean base and force-moves it to the new composed result.
-- `weaver compose --persist` remains available as a deprecated escape hatch when you intentionally want to move the base branch itself.
+- `weaver compose --update <branch>` rebuilds an existing integration branch from the clean base and force-moves it to the new composed result.
 
 ## Docs
 

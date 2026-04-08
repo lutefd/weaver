@@ -51,7 +51,6 @@ func TestComposeDryRun(t *testing.T) {
 		BaseBranch: "main",
 		Order:      []string{"feature-a", "feature-b"},
 		DryRun:     true,
-		Persisted:  false,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Compose() = %#v, want %#v", got, want)
@@ -82,7 +81,6 @@ func TestComposeRunsMergesAndRestoresBranch(t *testing.T) {
 		OriginalBranch: "topic",
 		BaseBranch:     "main",
 		Order:          []string{"feature-a", "feature-b"},
-		Persisted:      false,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Compose() = %#v, want %#v", got, want)
@@ -93,46 +91,6 @@ func TestComposeRunsMergesAndRestoresBranch(t *testing.T) {
 		"checkout --detach main",
 		"merge --no-ff --no-edit feature-a",
 		"merge --no-ff --no-edit feature-b",
-		"checkout topic",
-	}
-	if !reflect.DeepEqual(runner.calls, wantCalls) {
-		t.Fatalf("calls = %#v, want %#v", runner.calls, wantCalls)
-	}
-}
-
-func TestComposePersistsBaseBranchWhenRequested(t *testing.T) {
-	t.Parallel()
-
-	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
-	if err != nil {
-		t.Fatalf("NewDAG() error = %v", err)
-	}
-
-	runner := &composeRunner{
-		results: map[string]gitrunner.Result{
-			"branch --show-current": {Stdout: "topic"},
-		},
-	}
-	got, err := New(runner).Compose(context.Background(), dag, []string{"feature-b"}, "integration", ComposeOpts{Persist: true})
-	if err != nil {
-		t.Fatalf("Compose() error = %v", err)
-	}
-	want := &ComposeResult{
-		OriginalBranch: "topic",
-		BaseBranch:     "integration",
-		Order:          []string{"feature-a", "feature-b"},
-		Persisted:      true,
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Compose() = %#v, want %#v", got, want)
-	}
-
-	wantCalls := []string{
-		"branch --show-current",
-		"checkout --detach integration",
-		"merge --no-ff --no-edit feature-a",
-		"merge --no-ff --no-edit feature-b",
-		"branch -f integration HEAD",
 		"checkout topic",
 	}
 	if !reflect.DeepEqual(runner.calls, wantCalls) {
@@ -161,7 +119,6 @@ func TestComposeCreatesNewBranchWhenRequested(t *testing.T) {
 		OriginalBranch: "topic",
 		BaseBranch:     "main",
 		Order:          []string{"feature-a", "feature-b"},
-		Persisted:      false,
 		CreatedBranch:  "integration",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -181,7 +138,7 @@ func TestComposeCreatesNewBranchWhenRequested(t *testing.T) {
 	}
 }
 
-func TestComposeReplacesBranchWhenRequested(t *testing.T) {
+func TestComposeUpdatesBranchWhenRequested(t *testing.T) {
 	t.Parallel()
 
 	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
@@ -194,7 +151,7 @@ func TestComposeReplacesBranchWhenRequested(t *testing.T) {
 			"branch --show-current": {Stdout: "topic"},
 		},
 	}
-	got, err := New(runner).Compose(context.Background(), dag, []string{"feature-b"}, "main", ComposeOpts{ReplaceBranch: "integration"})
+	got, err := New(runner).Compose(context.Background(), dag, []string{"feature-b"}, "main", ComposeOpts{UpdateBranch: "integration"})
 	if err != nil {
 		t.Fatalf("Compose() error = %v", err)
 	}
@@ -202,8 +159,7 @@ func TestComposeReplacesBranchWhenRequested(t *testing.T) {
 		OriginalBranch: "topic",
 		BaseBranch:     "main",
 		Order:          []string{"feature-a", "feature-b"},
-		Persisted:      false,
-		ReplacedBranch: "integration",
+		UpdatedBranch:  "integration",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Compose() = %#v, want %#v", got, want)
@@ -231,14 +187,13 @@ func TestComposeRejectsCombinedWriteModes(t *testing.T) {
 	}
 
 	_, err = New(&composeRunner{}).Compose(context.Background(), dag, []string{"feature-a"}, "main", ComposeOpts{
-		Persist:       true,
-		CreateBranch:  "integration",
-		ReplaceBranch: "integration-preview",
+		CreateBranch: "integration",
+		UpdateBranch: "integration-preview",
 	})
 	if err == nil {
 		t.Fatal("Compose() error = nil, want error")
 	}
-	if !strings.Contains(err.Error(), "cannot combine persist, create branch, and replace branch modes") {
+	if !strings.Contains(err.Error(), "cannot combine create branch and update branch modes") {
 		t.Fatalf("Compose() error = %v, want write mode validation", err)
 	}
 }

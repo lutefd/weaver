@@ -8,7 +8,7 @@ Weaver is built around a few constraints:
 - Git-native: Git remains the execution engine.
 - Offline-friendly: the workflow must not depend on GitHub.
 - Crash-safe: multi-step rebase operations persist progress.
-- Safe integration by default: compose should stay ephemeral unless the user explicitly requests `--create` or `--replace`.
+- Safe integration by default: compose should stay ephemeral unless the user explicitly requests `--create` or `--update`.
 - Remote refresh: upstream-tracking updates should be explicit and fast-forward only.
 
 ## Layout
@@ -116,13 +116,12 @@ The engine:
 4. Checks out detached `HEAD` at the base branch.
 5. Merges each branch in order.
 6. Optionally creates a new branch from the composed result when `--create` is requested.
-7. Optionally force-replaces another branch from the clean composed result when `--replace` is requested.
-8. Optionally updates the base branch itself when the deprecated `--persist` mode is requested.
-9. Restores the original branch.
+7. Optionally force-updates another branch from the clean composed result when `--update` is requested.
+8. Restores the original branch.
 
 If a merge fails, the compose operation aborts and restores the prior branch.
 
-By default compose is ephemeral. New integration branches can be created explicitly with `--create`, and existing integration branches can be rebuilt from scratch with `--replace`. The older `--persist` mode remains available only when the caller intentionally wants to move the base branch itself.
+By default compose is ephemeral. New integration branches can be created explicitly with `--create`, and existing integration branches can be rebuilt from scratch with `--update`.
 
 ## Portability
 

@@ -159,14 +159,12 @@ If you want a new integration branch created from the composed result, opt in ex
 If you want an existing integration branch rebuilt from the clean base, opt in explicitly:
 
 ```bash
-./bin/weaver compose feature-b feature-d --base main --replace integration
+./bin/weaver compose feature-b feature-d --base main --update integration
 ```
 
 The `--create` form creates `integration` from the composed commit and then restores your original branch.
 
-The `--replace` form starts from `main`, composes the requested branches, force-moves `integration` to that fresh result, and then restores your original branch.
-
-`--persist` still exists for the narrow case where you intentionally want to move the base branch itself, but it is deprecated for integration workflows. Prefer `--replace` whenever the integration branch should be rebuilt from a clean source base.
+The `--update` form starts from `main`, composes the requested branches, force-moves `integration` to that fresh result, and then restores your original branch.
 
 ## Manage Groups
 

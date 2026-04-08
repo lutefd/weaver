@@ -159,14 +159,12 @@ Se você quiser criar uma nova branch de integração a partir do resultado comp
 Se você quiser recriar uma branch de integração existente a partir da base limpa, faça opt-in explícito:
 
 ```bash
-./bin/weaver compose feature-b feature-d --base main --replace integration
+./bin/weaver compose feature-b feature-d --base main --update integration
 ```
 
 Com `--create`, o Weaver cria `integration` a partir do commit composto e depois volta para a branch original.
 
-Com `--replace`, o Weaver parte de `main`, recompõe as branches pedidas, move `integration` à força para esse resultado novo e depois volta para a branch original.
-
-`--persist` ainda existe para o caso específico em que você quer mover a própria branch base, mas ele ficou obsoleto para fluxos de integração. Prefira `--replace` sempre que a branch de integração precisar ser recriada a partir de uma base limpa.
+Com `--update`, o Weaver parte de `main`, recompõe as branches pedidas, move `integration` à força para esse resultado novo e depois volta para a branch original.
 
 ## Gerenciar Grupos
 

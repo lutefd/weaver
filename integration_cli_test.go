@@ -149,7 +149,7 @@ func TestComposeCreateIntegration(t *testing.T) {
 	}
 }
 
-func TestComposeReplaceIntegrationRebuildsFromBase(t *testing.T) {
+func TestComposeUpdateIntegrationRebuildsFromBase(t *testing.T) {
 	repo := initGitRepo(t)
 	writeRepoFile(t, repo, "README.md", "base\n")
 	git(t, repo, "add", "README.md")
@@ -171,8 +171,8 @@ func TestComposeReplaceIntegrationRebuildsFromBase(t *testing.T) {
 	weaver(t, repo, "stack", "feature-b", "--on", "feature-a")
 	git(t, repo, "checkout", "feature-b")
 
-	seedResult := weaver(t, repo, "compose", "feature-b", "--base", "main", "--replace", "integration")
-	if !strings.Contains(seedResult.Output, "replaced integration from main with: feature-a -> feature-b") {
+	seedResult := weaver(t, repo, "compose", "feature-b", "--base", "main", "--update", "integration")
+	if !strings.Contains(seedResult.Output, "updated integration from main with: feature-a -> feature-b") {
 		t.Fatalf("compose output = %q", seedResult.Output)
 	}
 
@@ -193,17 +193,17 @@ func TestComposeReplaceIntegrationRebuildsFromBase(t *testing.T) {
 		t.Fatalf("sync output = %q", syncResult.Output)
 	}
 
-	result := weaver(t, repo, "compose", "feature-b", "--base", "main", "--replace", "integration")
-	if !strings.Contains(result.Output, "replaced integration from main with: feature-a -> feature-b") {
+	result := weaver(t, repo, "compose", "feature-b", "--base", "main", "--update", "integration")
+	if !strings.Contains(result.Output, "updated integration from main with: feature-a -> feature-b") {
 		t.Fatalf("compose output = %q", result.Output)
 	}
 	assertCurrentBranch(t, repo, "feature-b")
 
 	if after := revParse(t, repo, "integration"); after == driftedIntegration {
-		t.Fatalf("integration did not change after replace")
+		t.Fatalf("integration did not change after update")
 	}
 	if fileExistsAtRef(t, repo, "integration", "integration-only.txt") {
-		t.Fatal("integration-only.txt still present after replace")
+		t.Fatal("integration-only.txt still present after update")
 	}
 	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "main.txt")); got != "main-update" {
 		t.Fatalf("integration main.txt = %q, want main-update", got)

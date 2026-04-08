@@ -55,8 +55,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Use one selection mode only: explicit branches, `--group`, or `--all`.
 - Compose is ephemeral by default and should restore the original branch after completion.
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
-- If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --replace <integration-branch>`.
-- Treat `--persist` as a deprecated escape hatch only when the user explicitly wants to move the base branch itself.
+- If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.
 
 ### Handoff state
 
