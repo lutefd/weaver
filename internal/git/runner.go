@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -37,6 +38,10 @@ func (r *CLIRunner) Run(ctx context.Context, args ...string) (Result, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
+	if r.stdout != nil && isMutating(args) {
+		fmt.Fprintf(r.stdout, "+ git %s\n", strings.Join(args, " "))
+	}
+
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if r.repoRoot != "" {
 		cmd.Dir = r.repoRoot
@@ -52,11 +57,12 @@ func (r *CLIRunner) Run(ctx context.Context, args ...string) (Result, error) {
 	}
 
 	if err == nil {
+		result.ExitCode = 0
 		return result, nil
 	}
 
 	var exitErr *exec.ExitError
-	if ok := AsExitError(err, &exitErr); ok {
+	if errors.As(err, &exitErr) {
 		result.ExitCode = exitErr.ExitCode()
 	}
 
@@ -79,14 +85,15 @@ func DiscoverRepoRoot(ctx context.Context, cwd string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func AsExitError(err error, target **exec.ExitError) bool {
-	if err == nil {
+func isMutating(args []string) bool {
+	if len(args) == 0 {
 		return false
 	}
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
+
+	switch args[0] {
+	case "checkout", "switch", "rebase", "merge", "cherry-pick", "commit", "reset":
+		return true
+	default:
 		return false
 	}
-	*target = exitErr
-	return true
 }

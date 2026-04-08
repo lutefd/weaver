@@ -144,3 +144,14 @@ func markUsage(err error) error {
 	}
 	return usageError{err: err}
 }
+
+func currentBranchName(ctx context.Context) (string, error) {
+	result, err := AppContext().Runner.Run(ctx, "branch", "--show-current")
+	if err != nil {
+		return "", fmt.Errorf("resolve current branch: %w", err)
+	}
+	if result.Stdout == "" {
+		return "", fmt.Errorf("resolve current branch: empty branch name")
+	}
+	return result.Stdout, nil
+}
