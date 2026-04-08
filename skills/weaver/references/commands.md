@@ -31,9 +31,12 @@ weaver update --group sprint-42
 weaver update --all
 weaver sync
 weaver sync feature-c
+weaver sync feature-c --merge
 weaver continue
 weaver abort
 ```
+
+Use `weaver sync feature-c --merge` when you want to preserve existing branch history, such as open PRs. It fast-forwards when possible and otherwise creates the normal merge commit.
 
 ## Compose
 
@@ -53,7 +56,9 @@ weaver compose feature-b feature-d --base main --update integration
 
 Selection rule: use exactly one of explicit branches, `--group`, `--integration`, or `--all`.
 If no `--skip` is provided and a branch conflicts, Weaver prompts for `skip` or `abort`.
-If one branch keeps breaking a large compose because it has drifted too far, remove it from that compose or integration, repair it, and then merge it manually onto the branch produced by `--create` or `--update` before adding it back.
+If one branch keeps breaking a large compose, prefer `--skip` first: let the compose finish, then merge that branch manually onto the branch produced by `--create` or `--update`.
+If the same branch is repeatedly the outlier across runs, it can be better to pass `--skip <branch>` up front instead of waiting for the conflict prompt.
+Only remove the branch from the compose or saved integration entirely when skip-and-manual-merge is no longer a practical short-term workflow.
 
 ## Integrations
 

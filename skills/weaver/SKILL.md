@@ -51,6 +51,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Use `weaver update --integration <name>` when the branch set should follow a saved shared integration strategy.
 - Start with `weaver status` if the user wants to understand risk first.
 - Use `weaver sync [branch]` for the actual ordered rebase.
+- Use `weaver sync [branch] --merge` when the stack branches already have open PRs or reviewed history that should not be rewritten; this preserves history, fast-forwards when possible, and otherwise creates the normal merge commit.
 - If a rebase pauses on conflicts, use `weaver continue` after resolution or `weaver abort` to restore the original branch.
 
 ### Compose branches
@@ -63,6 +64,8 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Use `weaver compose --integration <name> ...` when the base and branch set should come from the saved strategy instead of being repeated manually.
 - Use `weaver compose ... --skip <branch>` when one branch should be left out temporarily for manual follow-up.
 - If the user did not provide `--skip`, expect `weaver compose` to prompt for `skip` or `abort` when a branch conflicts.
+- Treat repeated compose conflicts as a common workflow, not an exceptional one: if one branch keeps failing or is already known to be the noisy outlier, skip it outright or accept the `skip` prompt, let the compose finish, and then merge that branch manually onto the integration branch produced by `--create` or `--update`.
+- When using this pattern, prefer naming the skipped branch explicitly in the command if you already know it is the problem branch. That keeps the compose reproducible and avoids re-running the same failing merge.
 - If one branch is far more divergent than the rest and keeps breaking a large compose, prefer removing it from the compose or saved integration, repairing it first, and then merging it manually onto the branch created or updated by Weaver before adding it back.
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
 - If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.
@@ -86,7 +89,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Do not force-push as part of a Weaver workflow unless the user explicitly requests it.
 - If the user asks what Weaver will do without wanting changes yet, prefer read-only commands or `--dry-run`.
 - If `--integration` is selected, do not also invent a manual branch list or `--group` selection in the same command.
-- When a compose fails repeatedly because one branch is badly out of shape, do not keep retrying the full stack blindly; suggest removing that branch from the compose or integration, using `--skip` if needed, and merging it manually onto the branch produced by `--create` or `--update` only after repair.
+- When a compose fails repeatedly because one branch is badly out of shape, do not keep retrying the full stack blindly; default to skipping that branch, finishing the compose, and merging it manually onto the branch produced by `--create` or `--update` afterward. Only fall back to removing it from the compose or integration entirely when the branch is so unstable that even skip-and-manual-merge is not a good short-term workflow.
 - If a command fails because the repo lacks Weaver metadata, initialize with `weaver init` only when that matches the user’s intent.
 
 ## Reference
