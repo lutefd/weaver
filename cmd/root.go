@@ -26,9 +26,10 @@ type cliOptions struct {
 }
 
 type App struct {
-	Options cliOptions
-	Runner  gitrunner.Runner
-	Config  *config.Config
+	Options   cliOptions
+	Runner    gitrunner.Runner
+	Config    *config.Config
+	ConfigErr error
 }
 
 var (
@@ -39,7 +40,7 @@ var (
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			return bootstrapApp(cmd.Context())
+			return bootstrapApp(cmd.Context(), cmd)
 		},
 	}
 	app *App
@@ -71,7 +72,7 @@ func AppContext() *App {
 	return app
 }
 
-func bootstrapApp(ctx context.Context) error {
+func bootstrapApp(ctx context.Context, cmd *cobra.Command) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -88,17 +89,28 @@ func bootstrapApp(ctx context.Context) error {
 
 	runner := gitrunner.NewCLIRunner(repoRoot, os.Stdout)
 	cfg, err := loadConfig(repoRoot)
+	var cfgErr error
 	if err != nil {
 		var pathErr *os.PathError
 		if !errors.As(err, &pathErr) {
-			return err
+			if cmd == nil || cmd.Name() != "doctor" {
+				return err
+			}
+			cfgErr = err
+			defaultCfg := config.Default()
+			cfg = &defaultCfg
 		}
+	}
+	if cfg == nil {
+		defaultCfg := config.Default()
+		cfg = &defaultCfg
 	}
 
 	app = &App{
-		Options: opts,
-		Runner:  runner,
-		Config:  cfg,
+		Options:   opts,
+		Runner:    runner,
+		Config:    cfg,
+		ConfigErr: cfgErr,
 	}
 
 	return nil

@@ -117,6 +117,7 @@ if [[ "$feature_a_rev" != "$origin_feature_a_rev" ]]; then
   exit 1
 fi
 run_in "$PRIMARY_REPO" "$BINARY" status
+run_in "$PRIMARY_REPO" "$BINARY" doctor
 
 run_in "$PRIMARY_REPO" "$BINARY" group create sprint-42 feature-a feature-c
 run_in "$PRIMARY_REPO" "$BINARY" group add sprint-42 feature-b

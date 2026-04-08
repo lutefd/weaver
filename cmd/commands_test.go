@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -182,6 +183,32 @@ func TestExportAndImportCommands(t *testing.T) {
 	}
 }
 
+func TestDoctorCommand(t *testing.T) {
+	repoRoot := t.TempDir()
+	runGit(t, repoRoot, "init", "-b", "main")
+	runGit(t, repoRoot, "config", "user.name", "Command Test")
+	runGit(t, repoRoot, "config", "user.email", "command@example.com")
+	if _, err := config.Initialize(repoRoot); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	runGit(t, repoRoot, "add", "README.md", config.FileName)
+	runGit(t, repoRoot, "commit", "-m", "init")
+
+	setTestApp(t, repoRoot, gitrunner.NewCLIRunner(repoRoot, nil))
+
+	var out bytes.Buffer
+	doctorCmd.SetOut(&out)
+	if err := doctorCmd.RunE(doctorCmd, nil); err != nil {
+		t.Fatalf("doctor error = %v", err)
+	}
+	if !strings.Contains(out.String(), "summary:") {
+		t.Fatalf("doctor output = %q, want summary", out.String())
+	}
+}
+
 func setTestApp(t *testing.T, repoRoot string, runner gitrunner.Runner) {
 	t.Helper()
 
@@ -232,4 +259,20 @@ func (r *staticRunner) Run(_ context.Context, _ ...string) (gitrunner.Result, er
 
 func (r *staticRunner) RepoRoot() string {
 	return r.repoRoot
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=Command Test",
+		"GIT_AUTHOR_EMAIL=command@example.com",
+		"GIT_COMMITTER_NAME=Command Test",
+		"GIT_COMMITTER_EMAIL=command@example.com",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
 }

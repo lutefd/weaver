@@ -19,6 +19,7 @@ weaver/
 ├── internal/config/      # Repo-level config (.weaver.yaml)
 ├── internal/git/         # Git runner and parsers
 ├── internal/deps/        # Local dependency storage
+├── internal/doctor/      # Repository diagnostics and validation
 ├── internal/stack/       # DAG model and health checks
 ├── internal/updater/     # Remote-aware branch fast-forward engine
 ├── internal/resolver/    # DAG construction from dependency sources
@@ -68,6 +69,19 @@ Current health states:
 - `conflict risk`
 
 The check uses `git merge-base`, `git rev-parse`, and `git merge-tree --write-tree`.
+
+## Doctor
+
+`weaver doctor` is a read-only diagnostic pass over repository and Weaver state.
+
+It checks:
+
+- Weaver initialization files
+- config loading and base branch existence
+- dependency graph validity and referenced branches
+- group file validity and referenced branches
+- pending rebase state sanity
+- detached HEAD, dirty working tree, and in-progress Git operations
 
 ## Rebase Engine
 

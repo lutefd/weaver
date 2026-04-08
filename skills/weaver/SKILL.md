@@ -1,6 +1,6 @@
 ---
 name: weaver
-description: Use when a user wants to inspect, declare, refresh, rebase, compose, export, or import local Git branch stacks with the installed `weaver` CLI. Prefer this skill over raw `git` for stack-aware operations such as `stack`, `deps`, `status`, `update`, `sync`, `compose`, `group`, `export`, and `import`.
+description: Use when a user wants to inspect, diagnose, declare, refresh, rebase, compose, export, or import local Git branch stacks with the installed `weaver` CLI. Prefer this skill over raw `git` for stack-aware operations such as `stack`, `deps`, `status`, `doctor`, `update`, `sync`, `compose`, `group`, `export`, and `import`.
 ---
 
 # Weaver
@@ -24,6 +24,7 @@ If `weaver` is missing, stop and tell the user it is not installed instead of gu
 - Declaring or changing stack relationships
 - Showing stack chains or trees
 - Checking stack health
+- Diagnosing local Weaver or Git state
 - Refreshing local branches from their upstream refs
 - Rebasing an entire stack
 - Resuming or aborting a paused stack rebase
@@ -41,6 +42,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Use `weaver unstack <branch>` to remove a declaration.
 - Use `weaver deps [branch]` to inspect chains or the full tree.
 - Use `weaver status` when health labels matter.
+- Use `weaver doctor` when the user wants a read-only diagnostic pass.
 
 ### Rebase a stack
 

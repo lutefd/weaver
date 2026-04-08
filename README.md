@@ -9,6 +9,7 @@ It stores stack relationships in `.git/weaver/`, keeps them out of the committed
 - Declares branch dependencies locally with `weaver stack`.
 - Resolves stacks as a DAG built from `.git/weaver/deps.yaml`.
 - Shows stack structure and health with `weaver deps` and `weaver status`.
+- Diagnoses broken local state with `weaver doctor`.
 - Fetches upstream refs and fast-forwards local branches with `weaver update`.
 - Rebases a stack in dependency order with crash-safe resume state.
 - Composes multiple branches into an ephemeral integration state.
@@ -24,6 +25,7 @@ weaver stack <branch> --on <parent>
 weaver unstack <branch>
 weaver deps [branch]
 weaver status
+weaver doctor [--json]
 weaver update [branch...] [--group NAME | --all]
 weaver sync [branch]
 weaver continue
@@ -63,6 +65,7 @@ Inspect it:
 ```bash
 ./bin/weaver deps feature-c
 ./bin/weaver status
+./bin/weaver doctor
 ```
 
 Refresh local branches from upstream:

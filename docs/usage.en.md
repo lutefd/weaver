@@ -83,6 +83,22 @@ Possible health labels:
 - `needs rebase`
 - `conflict risk`
 
+## Diagnose Local State
+
+Run a read-only diagnostic pass:
+
+```bash
+./bin/weaver doctor
+```
+
+Get machine-readable output:
+
+```bash
+./bin/weaver doctor --json
+```
+
+`weaver doctor` checks initialization, config, declared branches, pending rebase state, and common Git state issues such as dirty working trees or in-progress operations.
+
 ## Update Local Branches From Upstream
 
 Update explicit branches:

@@ -7,6 +7,8 @@ Use `weaver` as the executable name.
 ```bash
 weaver init
 weaver version
+weaver doctor
+weaver doctor --json
 ```
 
 ## Dependencies

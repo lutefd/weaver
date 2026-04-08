@@ -83,6 +83,22 @@ Estados possíveis:
 - `needs rebase`
 - `conflict risk`
 
+## Diagnosticar o Estado Local
+
+Rode uma verificação somente leitura:
+
+```bash
+./bin/weaver doctor
+```
+
+Saída legível por máquina:
+
+```bash
+./bin/weaver doctor --json
+```
+
+`weaver doctor` verifica inicialização, config, branches declaradas, estado pendente de rebase e problemas comuns de Git, como árvore suja ou operações em andamento.
+
 ## Atualizar Branches Locais a Partir do Upstream
 
 Atualize branches explícitas:
