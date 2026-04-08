@@ -14,7 +14,8 @@ type Composer interface {
 }
 
 type ComposeOpts struct {
-	DryRun bool
+	DryRun  bool
+	Persist bool
 }
 
 type ComposeResult struct {
@@ -22,6 +23,7 @@ type ComposeResult struct {
 	BaseBranch     string
 	Order          []string
 	DryRun         bool
+	Persisted      bool
 }
 
 type ConflictError struct {
@@ -55,6 +57,7 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 		BaseBranch: base,
 		Order:      order,
 		DryRun:     opts.DryRun,
+		Persisted:  opts.Persist && !opts.DryRun,
 	}
 	if opts.DryRun {
 		return result, nil
@@ -75,6 +78,13 @@ func (e *Engine) Compose(ctx context.Context, dag *stack.DAG, branches []string,
 			_ = abortMerge(ctx, e.runner)
 			_ = restoreBranch(ctx, e.runner, originalBranch)
 			return result, ConflictError{Branch: branch, Err: err}
+		}
+	}
+
+	if opts.Persist {
+		if _, err := e.runner.Run(ctx, "branch", "-f", base, "HEAD"); err != nil {
+			_ = restoreBranch(ctx, e.runner, originalBranch)
+			return nil, err
 		}
 	}
 

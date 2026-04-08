@@ -126,7 +126,15 @@ Compose all tracked branches:
 ./bin/weaver compose --all
 ```
 
-Compose does not save a synthetic branch. It uses detached `HEAD`, performs the merges, and returns you to the original branch.
+Compose is ephemeral by default. It uses detached `HEAD`, performs the merges, and returns you to the original branch.
+
+If you want a real integration branch updated with the composed result, opt in explicitly:
+
+```bash
+./bin/weaver compose feature-b feature-d --base integration --persist
+```
+
+That updates `integration` to the composed commit and then restores your original branch.
 
 ## Manage Groups
 

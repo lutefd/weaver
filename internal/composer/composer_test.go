@@ -51,6 +51,7 @@ func TestComposeDryRun(t *testing.T) {
 		BaseBranch: "main",
 		Order:      []string{"feature-a", "feature-b"},
 		DryRun:     true,
+		Persisted:  false,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Compose() = %#v, want %#v", got, want)
@@ -81,6 +82,7 @@ func TestComposeRunsMergesAndRestoresBranch(t *testing.T) {
 		OriginalBranch: "topic",
 		BaseBranch:     "main",
 		Order:          []string{"feature-a", "feature-b"},
+		Persisted:      false,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Compose() = %#v, want %#v", got, want)
@@ -91,6 +93,46 @@ func TestComposeRunsMergesAndRestoresBranch(t *testing.T) {
 		"checkout --detach main",
 		"merge --no-ff --no-edit feature-a",
 		"merge --no-ff --no-edit feature-b",
+		"checkout topic",
+	}
+	if !reflect.DeepEqual(runner.calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, wantCalls)
+	}
+}
+
+func TestComposePersistsBaseBranchWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	runner := &composeRunner{
+		results: map[string]gitrunner.Result{
+			"branch --show-current": {Stdout: "topic"},
+		},
+	}
+	got, err := New(runner).Compose(context.Background(), dag, []string{"feature-b"}, "integration", ComposeOpts{Persist: true})
+	if err != nil {
+		t.Fatalf("Compose() error = %v", err)
+	}
+	want := &ComposeResult{
+		OriginalBranch: "topic",
+		BaseBranch:     "integration",
+		Order:          []string{"feature-a", "feature-b"},
+		Persisted:      true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Compose() = %#v, want %#v", got, want)
+	}
+
+	wantCalls := []string{
+		"branch --show-current",
+		"checkout --detach integration",
+		"merge --no-ff --no-edit feature-a",
+		"merge --no-ff --no-edit feature-b",
+		"branch -f integration HEAD",
 		"checkout topic",
 	}
 	if !reflect.DeepEqual(runner.calls, wantCalls) {

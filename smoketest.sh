@@ -70,6 +70,7 @@ run_in "$PRIMARY_REPO" git checkout main
 run_in "$PRIMARY_REPO" /bin/sh -c "echo main-update > main.txt"
 run_in "$PRIMARY_REPO" git add main.txt
 run_in "$PRIMARY_REPO" git commit -m "main-update"
+run_in "$PRIMARY_REPO" git branch integration
 
 run_in "$PRIMARY_REPO" "$BINARY" init
 run_in "$PRIMARY_REPO" "$BINARY" version
@@ -85,6 +86,7 @@ run_in "$PRIMARY_REPO" "$BINARY" group remove sprint-42 feature-c
 run_in "$PRIMARY_REPO" "$BINARY" group list
 
 run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --dry-run
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base integration --persist --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42 --dry-run
 run_in "$PRIMARY_REPO" "$BINARY" compose --all --dry-run
 
@@ -98,6 +100,13 @@ run_in "$PRIMARY_REPO" "$BINARY" status
 
 run_in "$PRIMARY_REPO" "$BINARY" compose --group sprint-42
 run_in "$PRIMARY_REPO" git branch --show-current
+run_in "$PRIMARY_REPO" "$BINARY" compose feature-c --base integration --persist
+integration_chain="$(cd "$PRIMARY_REPO" && git rev-list --count integration ^main)"
+echo "[smoke] integration-only commits after persist: $integration_chain"
+if [[ "$integration_chain" -le 0 ]]; then
+  echo "[smoke] expected integration branch to advance"
+  exit 1
+fi
 
 run_in "$PRIMARY_REPO" /bin/sh -c "\"$BINARY\" export > \"$STATE_FILE\""
 run_in "$PRIMARY_REPO" cat "$STATE_FILE"

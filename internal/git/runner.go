@@ -93,6 +93,13 @@ func isMutating(args []string) bool {
 	switch args[0] {
 	case "checkout", "switch", "rebase", "merge", "cherry-pick", "commit", "reset":
 		return true
+	case "branch":
+		for _, arg := range args[1:] {
+			if arg == "-f" || arg == "--force" {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}

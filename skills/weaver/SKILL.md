@@ -51,7 +51,8 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 
 - Prefer `weaver compose ... --dry-run` when the user wants preview or safety first.
 - Use one selection mode only: explicit branches, `--group`, or `--all`.
-- Remember that compose is ephemeral and should restore the original branch after completion.
+- Compose is ephemeral by default and should restore the original branch after completion.
+- If the user needs a real integration branch updated for later verification or release steps, use `weaver compose ... --base <branch> --persist`.
 
 ### Handoff state
 

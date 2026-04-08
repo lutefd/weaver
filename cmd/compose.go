@@ -16,13 +16,15 @@ import (
 func init() {
 	composeCmd.Flags().String("group", "", "compose all branches in a named group")
 	composeCmd.Flags().Bool("all", false, "compose every tracked branch")
+	composeCmd.Flags().String("base", "", "base branch to compose onto")
 	composeCmd.Flags().Bool("dry-run", false, "print the compose order without mutating git state")
+	composeCmd.Flags().Bool("persist", false, "update the base branch to the composed result")
 	rootCmd.AddCommand(composeCmd)
 }
 
 var composeCmd = &cobra.Command{
 	Use:   "compose [branch...]",
-	Short: "Compose one or more branches into an ephemeral integration state",
+	Short: "Compose one or more branches into an integration state",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		selected, err := resolveComposeBranches(AppContext().Runner.RepoRoot(), args, cmd)
@@ -39,9 +41,21 @@ var composeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		persist, err := cmd.Flags().GetBool("persist")
+		if err != nil {
+			return err
+		}
+		base, err := cmd.Flags().GetString("base")
+		if err != nil {
+			return err
+		}
+		if base == "" {
+			base = AppContext().Config.DefaultBase
+		}
 
-		result, err := composer.New(AppContext().Runner).Compose(ctx, dag, selected, AppContext().Config.DefaultBase, composer.ComposeOpts{
-			DryRun: dryRun,
+		result, err := composer.New(AppContext().Runner).Compose(ctx, dag, selected, base, composer.ComposeOpts{
+			DryRun:  dryRun,
+			Persist: persist,
 		})
 		if err != nil {
 			var conflictErr composer.ConflictError
@@ -52,11 +66,20 @@ var composeCmd = &cobra.Command{
 		}
 
 		if result.DryRun {
-			fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose order: %s\n", strings.Join(result.Order, " -> "))
+			mode := "ephemeral"
+			if persist {
+				mode = "persistent"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "dry-run %s compose on %s: %s\n", mode, result.BaseBranch, strings.Join(result.Order, " -> "))
 			return nil
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "composed: %s\n", strings.Join(result.Order, " -> "))
+		if result.Persisted {
+			fmt.Fprintf(cmd.OutOrStdout(), "updated %s with: %s\n", result.BaseBranch, strings.Join(result.Order, " -> "))
+			return nil
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), "composed ephemerally on %s: %s\n", result.BaseBranch, strings.Join(result.Order, " -> "))
 		return nil
 	},
 }
