@@ -41,13 +41,7 @@ weaver import <file>
 
 ## Quick Start
 
-Build the CLI:
-
-```bash
-make build
-```
-
-Or install the latest tagged release directly:
+Install the latest tagged release:
 
 ```bash
 go install github.com/lutefd/weaver@latest
@@ -57,44 +51,44 @@ weaver version
 Initialize Weaver inside a Git repository:
 
 ```bash
-./bin/weaver init
+weaver init
 ```
 
 Declare a stack:
 
 ```bash
-./bin/weaver stack feature-b --on feature-a
-./bin/weaver stack feature-c --on feature-b
+weaver stack feature-b --on feature-a
+weaver stack feature-c --on feature-b
 ```
 
 Inspect it:
 
 ```bash
-./bin/weaver deps feature-c
-./bin/weaver status
-./bin/weaver doctor
+weaver deps feature-c
+weaver status
+weaver doctor
 ```
 
 Refresh local branches from upstream:
 
 ```bash
-./bin/weaver update main feature-a feature-b
-./bin/weaver update --all
+weaver update main feature-a feature-b
+weaver update --all
 ```
 
 Rebase it:
 
 ```bash
-./bin/weaver sync feature-c
+weaver sync feature-c
 ```
 
 Compose it:
 
 ```bash
-./bin/weaver compose feature-c --dry-run
-./bin/weaver compose feature-c
-./bin/weaver compose feature-c --base main --create integration
-./bin/weaver compose feature-c --base main --update integration
+weaver compose feature-c --dry-run
+weaver compose feature-c
+weaver compose feature-c --base main --create integration
+weaver compose feature-c --base main --update integration
 ```
 
 ## Files and State
