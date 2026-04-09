@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lutefd/weaver/internal/deps"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,12 @@ var unstackCmd = &cobra.Command{
 		source := deps.NewLocalSource(AppContext().Runner.RepoRoot())
 		if err := source.Remove(context.Background(), branch); err != nil {
 			return err
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Dependency Removed", "Branch no longer depends on a parent", []ui.KeyValue{{Label: "branch", Value: branch}}, nil))
+			return nil
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "unstacked %s\n", branch)

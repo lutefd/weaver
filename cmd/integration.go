@@ -9,8 +9,10 @@ import (
 	"strings"
 
 	"github.com/lutefd/weaver/internal/deps"
+	gitrunner "github.com/lutefd/weaver/internal/git"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/lutefd/weaver/internal/resolver"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +58,16 @@ var integrationSaveCmd = &cobra.Command{
 			return err
 		}
 
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Integration Saved", "Saved integration compose strategy", []ui.KeyValue{
+				{Label: "name", Value: name},
+				{Label: "base", Value: base},
+				{Label: "branches", Value: strings.Join(recipe.Branches, " → ")},
+			}, nil))
+			return nil
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "saved integration %s on %s with: %s\n", name, base, strings.Join(recipe.Branches, " -> "))
 		return nil
 	},
@@ -72,6 +84,12 @@ var integrationShowCmd = &cobra.Command{
 		}
 		if !ok {
 			return fmt.Errorf("integration %q does not exist", args[0])
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderIntegrationRecipeStyled(term, args[0], recipe))
+			return nil
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "%s\n", args[0])
@@ -95,11 +113,26 @@ var integrationListCmd = &cobra.Command{
 			return nil
 		}
 
+		recipes := make(map[string]weaverintegration.Recipe, len(names))
 		for _, name := range names {
 			recipe, ok, err := store.Get(name)
 			if err != nil {
 				return err
 			}
+			if !ok {
+				continue
+			}
+			recipes[name] = recipe
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderIntegrationListStyled(term, recipes))
+			return nil
+		}
+
+		for _, name := range names {
+			recipe, ok := recipes[name]
 			if !ok {
 				continue
 			}
@@ -117,6 +150,12 @@ var integrationRemoveCmd = &cobra.Command{
 		if err := weaverintegration.NewStore(AppContext().Runner.RepoRoot()).Remove(args[0]); err != nil {
 			return err
 		}
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Integration Removed", "Saved integration deleted", []ui.KeyValue{{Label: "name", Value: args[0]}}, nil))
+			return nil
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "removed integration %s\n", args[0])
 		return nil
 	},
@@ -141,6 +180,12 @@ var integrationExportCmd = &cobra.Command{
 		}
 
 		if !asJSON {
+			term := terminalFor(cmd)
+			if term.Styled() {
+				writeLine(cmd.OutOrStdout(), renderIntegrationRecipeStyled(term, args[0], recipe))
+				return nil
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\n", args[0])
 			fmt.Fprintf(cmd.OutOrStdout(), "base: %s\n", recipe.Base)
 			fmt.Fprintf(cmd.OutOrStdout(), "branches: %s\n", strings.Join(recipe.Branches, " -> "))
@@ -170,17 +215,21 @@ var integrationDoctorCmd = &cobra.Command{
 			return fmt.Errorf("integration %q does not exist", args[0])
 		}
 
-		dag, err := resolver.New(deps.NewLocalSource(AppContext().Runner.RepoRoot())).Resolve(ctx)
-		if err != nil {
-			return err
-		}
-
-		report, err := weaverintegration.NewAnalyzer(AppContext().Runner).Analyze(ctx, dag, args[0], recipe)
-		if err != nil {
-			return err
-		}
-
 		asJSON, err := cmd.Flags().GetBool("json")
+		if err != nil {
+			return err
+		}
+
+		report, err := runTask(ctx, cmd, ui.TaskSpec{
+			Title:    "Checking Integration",
+			Subtitle: fmt.Sprintf("Analyzing %s for drift and suspicious merges", args[0]),
+		}, func(ctx context.Context, runner gitrunner.Runner) (*weaverintegration.Report, error) {
+			dag, err := resolver.New(deps.NewLocalSource(runner.RepoRoot())).Resolve(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return weaverintegration.NewAnalyzer(runner).Analyze(ctx, dag, args[0], recipe)
+		})
 		if err != nil {
 			return err
 		}
@@ -191,7 +240,12 @@ var integrationDoctorCmd = &cobra.Command{
 				return err
 			}
 		} else {
-			renderIntegrationDoctorReport(cmd.OutOrStdout(), report)
+			term := terminalFor(cmd)
+			if term.Styled() {
+				writeLine(cmd.OutOrStdout(), renderIntegrationDoctorReportStyled(term, report))
+			} else {
+				renderIntegrationDoctorReport(cmd.OutOrStdout(), report)
+			}
 		}
 
 		if report.HasFailures() {
@@ -219,6 +273,15 @@ var integrationImportCmd = &cobra.Command{
 		if err := weaverintegration.NewStore(AppContext().Runner.RepoRoot()).Save(exported.Integration.Name, exported.Integration.Recipe); err != nil {
 			return err
 		}
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Integration Imported", "Imported saved integration strategy", []ui.KeyValue{
+				{Label: "name", Value: exported.Integration.Name},
+				{Label: "file", Value: args[0]},
+			}, nil))
+			return nil
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "imported integration %s from %s\n", exported.Integration.Name, args[0])
 		return nil
 	},

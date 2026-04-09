@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lutefd/weaver/internal/group"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +31,14 @@ var groupCreateCmd = &cobra.Command{
 		if err := group.NewStore(AppContext().Runner.RepoRoot()).Create(name, branches); err != nil {
 			return err
 		}
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Group Created", "Named compose group saved", []ui.KeyValue{
+				{Label: "name", Value: name},
+				{Label: "branches", Value: strings.Join(branches, ", ")},
+			}, nil))
+			return nil
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "created group %s\n", name)
 		return nil
 	},
@@ -43,6 +52,14 @@ var groupAddCmd = &cobra.Command{
 		name, branches := args[0], args[1:]
 		if err := group.NewStore(AppContext().Runner.RepoRoot()).Add(name, branches); err != nil {
 			return err
+		}
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Group Updated", "Branches added to compose group", []ui.KeyValue{
+				{Label: "name", Value: name},
+				{Label: "added", Value: strings.Join(branches, ", ")},
+			}, nil))
+			return nil
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "updated group %s\n", name)
 		return nil
@@ -61,6 +78,17 @@ var groupRemoveCmd = &cobra.Command{
 		}
 		if err := group.NewStore(AppContext().Runner.RepoRoot()).Remove(name, branches); err != nil {
 			return err
+		}
+		term := terminalFor(cmd)
+		if term.Styled() {
+			details := []ui.KeyValue{{Label: "name", Value: name}}
+			if len(branches) > 0 {
+				details = append(details, ui.KeyValue{Label: "removed", Value: strings.Join(branches, ", ")})
+			} else {
+				details = append(details, ui.KeyValue{Label: "removed", Value: "entire group"})
+			}
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Group Updated", "Compose group removal applied", details, nil))
+			return nil
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "updated group %s\n", name)
 		return nil
@@ -84,6 +112,11 @@ var groupListCmd = &cobra.Command{
 		groups, err := store.List()
 		if err != nil {
 			return err
+		}
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderGroupListStyled(term, groups))
+			return nil
 		}
 		for _, name := range names {
 			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", name, strings.Join(groups[name], ", "))

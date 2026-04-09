@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lutefd/weaver/internal/config"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -21,11 +22,20 @@ var initCmd = &cobra.Command{
 			return err
 		}
 
+		term := terminalFor(cmd)
 		if created {
+			if term.Styled() {
+				writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Weaver Initialized", "Repository metadata is ready", []ui.KeyValue{{Label: "repo", Value: repoRoot}}, nil))
+				return nil
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Initialized Weaver in %s\n", repoRoot)
 			return nil
 		}
 
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneInfo, "Already Initialized", "Repository metadata already exists", []ui.KeyValue{{Label: "repo", Value: repoRoot}}, nil))
+			return nil
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Weaver already initialized in %s\n", repoRoot)
 		return nil
 	},

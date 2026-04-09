@@ -6,6 +6,7 @@ import (
 
 	"github.com/lutefd/weaver/internal/deps"
 	stackpkg "github.com/lutefd/weaver/internal/stack"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +47,15 @@ var stackCmd = &cobra.Command{
 
 		if err := source.Set(ctx, branch, parent); err != nil {
 			return err
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Dependency Saved", "Branch dependency updated", []ui.KeyValue{
+				{Label: "branch", Value: branch},
+				{Label: "parent", Value: parent},
+			}, nil))
+			return nil
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "stacked %s on %s\n", branch, parent)

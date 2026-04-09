@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/merger"
 	"github.com/lutefd/weaver/internal/rebaser"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,15 +27,31 @@ var abortCmd = &cobra.Command{
 		case rebasePending && mergePending:
 			return fmt.Errorf("both rebase and merge stack sync state are pending; repair .git/weaver state before aborting")
 		case mergePending:
-			if err := merger.New(AppContext().Runner).Abort(context.Background()); err != nil {
+			if _, err := runTask(context.Background(), cmd, ui.TaskSpec{
+				Title:    "Aborting Sync",
+				Subtitle: "Restoring branch after merge-based sync",
+			}, func(ctx context.Context, runner gitrunner.Runner) (struct{}, error) {
+				return struct{}{}, merger.New(runner).Abort(ctx)
+			}); err != nil {
 				return err
 			}
 		case rebasePending:
-			if err := rebaser.New(AppContext().Runner).Abort(context.Background()); err != nil {
+			if _, err := runTask(context.Background(), cmd, ui.TaskSpec{
+				Title:    "Aborting Sync",
+				Subtitle: "Restoring branch after rebase-based sync",
+			}, func(ctx context.Context, runner gitrunner.Runner) (struct{}, error) {
+				return struct{}{}, rebaser.New(runner).Abort(ctx)
+			}); err != nil {
 				return err
 			}
 		default:
 			return fmt.Errorf("no pending stack sync found")
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneWarn, "Sync Aborted", "Paused stack sync was cancelled", nil, nil))
+			return nil
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "aborted stack sync")

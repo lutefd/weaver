@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/merger"
 	"github.com/lutefd/weaver/internal/rebaser"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +27,12 @@ var continueCmd = &cobra.Command{
 		case rebasePending && mergePending:
 			return fmt.Errorf("both rebase and merge stack sync state are pending; repair .git/weaver state before continuing")
 		case mergePending:
-			result, err := merger.New(AppContext().Runner).Continue(context.Background())
+			result, err := runTask(context.Background(), cmd, ui.TaskSpec{
+				Title:    "Continuing Sync",
+				Subtitle: "Resuming merge-based stack sync",
+			}, func(ctx context.Context, runner gitrunner.Runner) (*merger.MergeResult, error) {
+				return merger.New(runner).Continue(ctx)
+			})
 			if err != nil {
 				return err
 			}
@@ -33,7 +40,12 @@ var continueCmd = &cobra.Command{
 				return fmt.Errorf("merge is still blocked at %s onto %s", result.Current, result.CurrentOnto)
 			}
 		case rebasePending:
-			result, err := rebaser.New(AppContext().Runner).Continue(context.Background())
+			result, err := runTask(context.Background(), cmd, ui.TaskSpec{
+				Title:    "Continuing Sync",
+				Subtitle: "Resuming rebase-based stack sync",
+			}, func(ctx context.Context, runner gitrunner.Runner) (*rebaser.RebaseResult, error) {
+				return rebaser.New(runner).Continue(ctx)
+			})
 			if err != nil {
 				return err
 			}
@@ -42,6 +54,12 @@ var continueCmd = &cobra.Command{
 			}
 		default:
 			return fmt.Errorf("no pending stack sync found")
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneSuccess, "Sync Continued", "Paused stack sync resumed successfully", nil, nil))
+			return nil
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "continued stack sync")

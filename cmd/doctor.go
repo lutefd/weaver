@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/lutefd/weaver/internal/doctor"
+	gitrunner "github.com/lutefd/weaver/internal/git"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -21,12 +23,17 @@ var doctorCmd = &cobra.Command{
 	Short: "Inspect repository and Weaver state for common problems",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := context.Background()
-		report, err := doctor.New(AppContext().Runner, AppContext().Config, AppContext().ConfigErr).Run(ctx)
+		asJSON, err := cmd.Flags().GetBool("json")
 		if err != nil {
 			return err
 		}
 
-		asJSON, err := cmd.Flags().GetBool("json")
+		report, err := runTask(ctx, cmd, ui.TaskSpec{
+			Title:    "Running Doctor",
+			Subtitle: "Checking repository and Weaver state",
+		}, func(ctx context.Context, runner gitrunner.Runner) (*doctor.Report, error) {
+			return doctor.New(runner, AppContext().Config, AppContext().ConfigErr).Run(ctx)
+		})
 		if err != nil {
 			return err
 		}
@@ -38,7 +45,12 @@ var doctorCmd = &cobra.Command{
 				return err
 			}
 		} else {
-			renderDoctorReport(cmd.OutOrStdout(), report)
+			term := terminalFor(cmd)
+			if term.Styled() {
+				writeLine(cmd.OutOrStdout(), renderDoctorReportStyled(term, report))
+			} else {
+				renderDoctorReport(cmd.OutOrStdout(), report)
+			}
 		}
 
 		if report.HasFailures() {

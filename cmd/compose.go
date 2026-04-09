@@ -10,8 +10,10 @@ import (
 
 	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/deps"
+	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/resolver"
 	"github.com/lutefd/weaver/internal/stack"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +39,12 @@ var composeCmd = &cobra.Command{
 			return err
 		}
 
-		dag, err := resolver.New(deps.NewLocalSource(AppContext().Runner.RepoRoot())).Resolve(ctx)
+		dag, err := runTask(ctx, cmd, ui.TaskSpec{
+			Title:    "Resolving Compose Inputs",
+			Subtitle: "Building the stack graph for this compose run",
+		}, func(ctx context.Context, runner gitrunner.Runner) (*stack.DAG, error) {
+			return resolver.New(deps.NewLocalSource(runner.RepoRoot())).Resolve(ctx)
+		})
 		if err != nil {
 			return err
 		}
@@ -67,6 +74,11 @@ var composeCmd = &cobra.Command{
 		}
 
 		if result.DryRun {
+			term := terminalFor(cmd)
+			if term.Styled() {
+				writeLine(cmd.OutOrStdout(), renderComposeResultStyled(term, result))
+				return nil
+			}
 			switch {
 			case result.CreatedBranch != "":
 				fmt.Fprintf(cmd.OutOrStdout(), "dry-run compose on %s and create %s: %s%s\n", result.BaseBranch, result.CreatedBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
@@ -75,6 +87,13 @@ var composeCmd = &cobra.Command{
 			default:
 				fmt.Fprintf(cmd.OutOrStdout(), "dry-run ephemeral compose on %s: %s%s\n", result.BaseBranch, strings.Join(result.Order, " -> "), formatSkipped(result.Skipped))
 			}
+			return nil
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderComposeResultStyled(term, result))
+			renderManualMergeSummary(cmd.OutOrStdout(), result)
 			return nil
 		}
 
@@ -146,9 +165,22 @@ func formatSkipped(skipped []string) string {
 }
 
 func runComposeWithRecovery(ctx context.Context, cmd *cobra.Command, dag *stack.DAG, branches []string, base string, opts composer.ComposeOpts) (*composer.ComposeResult, error) {
-	engine := composer.New(AppContext().Runner)
 	for {
-		result, err := engine.Compose(ctx, dag, branches, base, opts)
+		var (
+			result *composer.ComposeResult
+			err    error
+		)
+		if opts.DryRun {
+			result, err = composer.New(AppContext().Runner).Compose(ctx, dag, branches, base, opts)
+		} else {
+			result, err = runTask(ctx, cmd, ui.TaskSpec{
+				Title:    "Running Compose",
+				Subtitle: fmt.Sprintf("Composing onto %s", base),
+				TotalOps: estimateComposeOps(dag, branches, base, opts),
+			}, func(ctx context.Context, runner gitrunner.Runner) (*composer.ComposeResult, error) {
+				return composer.New(runner).Compose(ctx, dag, branches, base, opts)
+			})
+		}
 		if err == nil {
 			return result, nil
 		}
@@ -170,8 +202,47 @@ func runComposeWithRecovery(ctx context.Context, cmd *cobra.Command, dag *stack.
 		}
 
 		opts.SkipBranches = appendUniqueBranch(opts.SkipBranches, conflictErr.Branch)
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneWarn, "Retrying Compose", "Branch skipped after merge conflict", []ui.KeyValue{{Label: "branch", Value: conflictErr.Branch}}, []string{"merge it manually later"}))
+			continue
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "skipping %s and retrying compose; merge it manually later\n", conflictErr.Branch)
 	}
+}
+
+func estimateComposeOps(dag *stack.DAG, branches []string, base string, opts composer.ComposeOpts) int {
+	if opts.DryRun {
+		return 0
+	}
+
+	order, err := composer.ResolveOrder(dag, branches, base)
+	if err != nil {
+		return 0
+	}
+
+	skipSet := make(map[string]struct{}, len(opts.SkipBranches))
+	for _, branch := range opts.SkipBranches {
+		if branch == "" {
+			continue
+		}
+		skipSet[branch] = struct{}{}
+	}
+
+	mergeCount := 0
+	for _, branch := range order {
+		if _, skipped := skipSet[branch]; skipped {
+			continue
+		}
+		mergeCount++
+	}
+
+	total := 1 + 1 + mergeCount + 1
+	if opts.CreateBranch != "" || opts.UpdateBranch != "" {
+		total++
+	}
+	return total
 }
 
 func formatComposeConflictError(conflictErr composer.ConflictError) error {
@@ -184,7 +255,14 @@ func formatComposeConflictError(conflictErr composer.ConflictError) error {
 func promptSkipOnComposeConflict(cmd *cobra.Command, conflictErr composer.ConflictError) (bool, error) {
 	reader := bufio.NewReader(cmd.InOrStdin())
 	for {
-		if len(conflictErr.Files) > 0 {
+		term := terminalFor(cmd)
+		if term.Styled() {
+			details := []ui.KeyValue{{Label: "branch", Value: conflictErr.Branch}}
+			if len(conflictErr.Files) > 0 {
+				details = append(details, ui.KeyValue{Label: "files", Value: strings.Join(conflictErr.Files, ", ")})
+			}
+			writeLine(cmd.OutOrStdout(), renderActionCard(term, ui.ToneDanger, "Compose Conflict", "Choose whether to skip or abort this branch", details, []string{"type skip to continue", "type abort to stop"}))
+		} else if len(conflictErr.Files) > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "compose conflict while merging %s; conflicted files: %s\n", conflictErr.Branch, strings.Join(conflictErr.Files, ", "))
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "compose conflict while merging %s\n", conflictErr.Branch)

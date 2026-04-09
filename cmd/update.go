@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	gitrunner "github.com/lutefd/weaver/internal/git"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/lutefd/weaver/internal/updater"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +29,12 @@ var updateCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := updater.New(AppContext().Runner).Update(ctx, selection.Branches)
+		result, err := runTask(ctx, cmd, ui.TaskSpec{
+			Title:    "Updating Branches",
+			Subtitle: "Fetching remotes and fast-forwarding local branches",
+		}, func(ctx context.Context, runner gitrunner.Runner) (*updater.UpdateResult, error) {
+			return updater.New(runner).Update(ctx, selection.Branches)
+		})
 		if err != nil {
 			var missingBranchErr updater.MissingBranchError
 			if errors.As(err, &missingBranchErr) {
@@ -53,6 +60,12 @@ var updateCmd = &cobra.Command{
 		}
 		if len(parts) == 0 {
 			parts = append(parts, "no branches changed")
+		}
+
+		term := terminalFor(cmd)
+		if term.Styled() {
+			writeLine(cmd.OutOrStdout(), renderUpdateResultStyled(term, result))
+			return nil
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), strings.Join(parts, "; "))

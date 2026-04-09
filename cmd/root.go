@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -87,7 +88,11 @@ func bootstrapApp(ctx context.Context, cmd *cobra.Command) error {
 		return fmt.Errorf("discover repository root: %w", err)
 	}
 
-	runner := gitrunner.NewCLIRunner(repoRoot, os.Stdout)
+	var trace io.Writer
+	if opts.Verbose && cmd != nil {
+		trace = cmd.OutOrStdout()
+	}
+	runner := gitrunner.NewCLIRunner(repoRoot, trace)
 	cfg, err := loadConfig(repoRoot)
 	var cfgErr error
 	if err != nil {
