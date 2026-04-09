@@ -9,10 +9,15 @@ type StackNode struct {
 	Branch string
 }
 
-type StackHealth string
+type StackHealthState string
 
 const (
-	HealthClean        StackHealth = "clean"
-	HealthNeedsRebase  StackHealth = "needs rebase"
-	HealthConflictRisk StackHealth = "conflict risk"
+	HealthClean        StackHealthState = "clean"
+	HealthOutdated     StackHealthState = "outdated"
+	HealthConflictRisk StackHealthState = "conflict risk"
 )
+
+type StackHealth struct {
+	State  StackHealthState
+	Behind int
+}

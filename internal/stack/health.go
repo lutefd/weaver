@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	gitparse "github.com/lutefd/weaver/internal/git"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 )
 
@@ -35,26 +36,35 @@ func ComputeHealth(ctx context.Context, runner gitrunner.Runner, dag *DAG, base 
 func classifyHealth(ctx context.Context, runner gitrunner.Runner, branch, parent string) (StackHealth, error) {
 	mergeBase, err := runner.Run(ctx, "merge-base", branch, parent)
 	if err != nil {
-		return "", fmt.Errorf("resolve merge-base for %s on %s: %w", branch, parent, err)
+		return StackHealth{}, fmt.Errorf("resolve merge-base for %s on %s: %w", branch, parent, err)
 	}
 
 	parentRev, err := runner.Run(ctx, "rev-parse", parent)
 	if err != nil {
-		return "", fmt.Errorf("resolve parent revision for %s: %w", parent, err)
+		return StackHealth{}, fmt.Errorf("resolve parent revision for %s: %w", parent, err)
+	}
+
+	aheadBehind, err := runner.Run(ctx, "rev-list", "--left-right", "--count", branch+"..."+parent)
+	if err != nil {
+		return StackHealth{}, fmt.Errorf("resolve ahead/behind for %s on %s: %w", branch, parent, err)
+	}
+	_, behind, err := gitparse.ParseAheadBehind(aheadBehind.Stdout)
+	if err != nil {
+		return StackHealth{}, fmt.Errorf("parse ahead/behind for %s on %s: %w", branch, parent, err)
 	}
 
 	if mergeBase.Stdout == parentRev.Stdout {
-		return HealthClean, nil
+		return StackHealth{State: HealthClean, Behind: behind}, nil
 	}
 
 	// A clean merge-tree means the branch is behind its parent but can be rebased cleanly.
 	result, err := runner.Run(ctx, "merge-tree", "--write-tree", "--quiet", parent, branch)
 	if err == nil {
-		return HealthNeedsRebase, nil
+		return StackHealth{State: HealthOutdated, Behind: behind}, nil
 	}
 	if result.ExitCode != 0 {
-		return HealthConflictRisk, nil
+		return StackHealth{State: HealthConflictRisk, Behind: behind}, nil
 	}
 
-	return "", fmt.Errorf("predict merge-tree for %s on %s: %w", branch, parent, err)
+	return StackHealth{}, fmt.Errorf("predict merge-tree for %s on %s: %w", branch, parent, err)
 }

@@ -22,6 +22,11 @@ type Runner interface {
 	RepoRoot() string
 }
 
+type CommandEvent struct {
+	Args     []string
+	Mutating bool
+}
+
 type CLIRunner struct {
 	repoRoot string
 	stdout   io.Writer
@@ -30,6 +35,17 @@ type CLIRunner struct {
 func NewCLIRunner(repoRoot string, stdout io.Writer) *CLIRunner {
 	return &CLIRunner{
 		repoRoot: repoRoot,
+		stdout:   stdout,
+	}
+}
+
+func (r *CLIRunner) WithStdout(stdout io.Writer) *CLIRunner {
+	if r == nil {
+		return nil
+	}
+
+	return &CLIRunner{
+		repoRoot: r.repoRoot,
 		stdout:   stdout,
 	}
 }
@@ -103,4 +119,41 @@ func isMutating(args []string) bool {
 	default:
 		return false
 	}
+}
+
+type observerRunner struct {
+	inner  Runner
+	before func(CommandEvent)
+	after  func(CommandEvent, Result, error)
+}
+
+func WithObserver(inner Runner, before func(CommandEvent), after func(CommandEvent, Result, error)) Runner {
+	if inner == nil {
+		return nil
+	}
+	return &observerRunner{
+		inner:  inner,
+		before: before,
+		after:  after,
+	}
+}
+
+func (r *observerRunner) Run(ctx context.Context, args ...string) (Result, error) {
+	event := CommandEvent{
+		Args:     append([]string(nil), args...),
+		Mutating: isMutating(args),
+	}
+	if r.before != nil {
+		r.before(event)
+	}
+
+	result, err := r.inner.Run(ctx, args...)
+	if r.after != nil {
+		r.after(event, result, err)
+	}
+	return result, err
+}
+
+func (r *observerRunner) RepoRoot() string {
+	return r.inner.RepoRoot()
 }

@@ -27,13 +27,17 @@ func TestComputeHealth(t *testing.T) {
 		results: map[string]gitrunner.Result{
 			"merge-base feature-a main":                           {Stdout: "sha-main"},
 			"rev-parse main":                                      {Stdout: "sha-main"},
+			"rev-list --left-right --count feature-a...main":      {Stdout: "0 0"},
 			"merge-base feature-b feature-a":                      {Stdout: "sha-old"},
 			"rev-parse feature-a":                                 {Stdout: "sha-new"},
+			"rev-list --left-right --count feature-b...feature-a": {Stdout: "1 3"},
 			"merge-tree --write-tree --quiet feature-a feature-b": {},
 			"merge-base feature-c feature-b":                      {Stdout: "sha-older"},
 			"rev-parse feature-b":                                 {Stdout: "sha-newer"},
+			"rev-list --left-right --count feature-c...feature-b": {Stdout: "4 2"},
 			"merge-tree --write-tree --quiet feature-b feature-c": {ExitCode: 1},
 			"merge-base feature-d main":                           {Stdout: "sha-main"},
+			"rev-list --left-right --count feature-d...main":      {Stdout: "0 0"},
 		},
 		errs: map[string]error{
 			"merge-tree --write-tree --quiet feature-b feature-c": errors.New("exit status 1"),
@@ -46,10 +50,10 @@ func TestComputeHealth(t *testing.T) {
 	}
 
 	want := map[string]StackHealth{
-		"feature-a": HealthClean,
-		"feature-b": HealthNeedsRebase,
-		"feature-c": HealthConflictRisk,
-		"feature-d": HealthClean,
+		"feature-a": {State: HealthClean, Behind: 0},
+		"feature-b": {State: HealthOutdated, Behind: 3},
+		"feature-c": {State: HealthConflictRisk, Behind: 2},
+		"feature-d": {State: HealthClean, Behind: 0},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ComputeHealth() = %#v, want %#v", got, want)

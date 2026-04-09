@@ -76,12 +76,12 @@ func TestRenderStatusTree(t *testing.T) {
 	}
 
 	got := RenderStatusTree(dag, "main", map[string]stack.StackHealth{
-		"feature-a": stack.HealthClean,
-		"feature-b": stack.HealthNeedsRebase,
-		"feature-c": stack.HealthConflictRisk,
+		"feature-a": {State: stack.HealthClean},
+		"feature-b": {State: stack.HealthOutdated, Behind: 3},
+		"feature-c": {State: stack.HealthConflictRisk, Behind: 2},
 	})
 
-	want := "main\n`-- feature-a  clean\n    `-- feature-b  needs rebase\n        `-- feature-c  conflict risk"
+	want := "main\n`-- feature-a  clean\n    `-- feature-b  outdated (3 behind)\n        `-- feature-c  conflict risk (2 behind)"
 	if got != want {
 		t.Fatalf("RenderStatusTree() = %q, want %q", got, want)
 	}
