@@ -2,8 +2,10 @@ package deps
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/lutefd/weaver/internal/stack"
@@ -75,5 +77,44 @@ func TestLocalSourceWritesInsideGitMetadata(t *testing.T) {
 
 	if got, want := source.path(), filepath.Join(repoRoot, ".git", "weaver", "deps.yaml"); got != want {
 		t.Fatalf("path() = %q, want %q", got, want)
+	}
+}
+
+func TestLocalSourceReplaceAndMap(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	source := NewLocalSource(repoRoot)
+	dependencies := map[string]string{"feature-b": "feature-a"}
+	if err := source.Replace(dependencies); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	dependencies["feature-c"] = "feature-b"
+	got, err := source.Map(context.Background())
+	if err != nil {
+		t.Fatalf("Map() error = %v", err)
+	}
+	want := map[string]string{"feature-b": "feature-a"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Map() = %#v, want %#v", got, want)
+	}
+}
+
+func TestLocalSourceLoadDecodeError(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	source := NewLocalSource(repoRoot)
+	if err := os.MkdirAll(filepath.Dir(source.path()), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(source.path(), []byte("dependencies: ["), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := source.Load(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "decode deps file") {
+		t.Fatalf("Load() error = %v, want decode deps file", err)
 	}
 }

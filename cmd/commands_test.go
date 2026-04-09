@@ -13,6 +13,7 @@ import (
 	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/config"
 	"github.com/lutefd/weaver/internal/deps"
+	"github.com/lutefd/weaver/internal/doctor"
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
@@ -245,6 +246,45 @@ func TestContinueCommandResumesMergeSync(t *testing.T) {
 	}
 }
 
+func TestEstimateComposeOps(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got := estimateComposeOps(dag, []string{"feature-c"}, "main", composer.ComposeOpts{})
+	if got != 6 {
+		t.Fatalf("estimateComposeOps() = %d, want 6", got)
+	}
+}
+
+func TestEstimateComposeOpsWithSkippedBranchAndCreate(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got := estimateComposeOps(dag, []string{"feature-c"}, "main", composer.ComposeOpts{
+		CreateBranch: "integration",
+		SkipBranches: []string{"feature-b"},
+	})
+	if got != 6 {
+		t.Fatalf("estimateComposeOps() = %d, want 6", got)
+	}
+}
+
 func TestAbortCommandAbortsMergeSync(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &commandRecordingRunner{repoRoot: repoRoot}
@@ -385,6 +425,42 @@ func TestResolveComposeOptions(t *testing.T) {
 	_, err = resolveComposeOptions(cmd, "main")
 	if !errors.As(err, &usageErr) {
 		t.Fatalf("resolveComposeOptions() error = %v, want usageError", err)
+	}
+}
+
+func TestFormatSkipped(t *testing.T) {
+	if got := formatSkipped(nil); got != "" {
+		t.Fatalf("formatSkipped(nil) = %q, want empty", got)
+	}
+	if got := formatSkipped([]string{"feature-a", "feature-b"}); got != " (skipped: feature-a, feature-b)" {
+		t.Fatalf("formatSkipped(...) = %q", got)
+	}
+}
+
+func TestFormatComposeConflictError(t *testing.T) {
+	err := formatComposeConflictError(composer.ConflictError{Branch: "feature-a", Files: []string{"a.go", "b.go"}})
+	if got := err.Error(); !strings.Contains(got, "feature-a") || !strings.Contains(got, "a.go, b.go") {
+		t.Fatalf("formatComposeConflictError() = %q", got)
+	}
+}
+
+func TestRenderManualMergeSummary(t *testing.T) {
+	var out bytes.Buffer
+	renderManualMergeSummary(&out, &composer.ComposeResult{
+		CreatedBranch: "integration",
+		Skipped:       []string{"feature-a"},
+	})
+	if got := out.String(); !strings.Contains(got, "manual merge required onto integration: feature-a") {
+		t.Fatalf("renderManualMergeSummary() = %q", got)
+	}
+}
+
+func TestAppendUniqueBranch(t *testing.T) {
+	if got := appendUniqueBranch([]string{"feature-a"}, "feature-a"); strings.Join(got, ",") != "feature-a" {
+		t.Fatalf("appendUniqueBranch duplicate = %#v", got)
+	}
+	if got := appendUniqueBranch([]string{"feature-a"}, "feature-b"); strings.Join(got, ",") != "feature-a,feature-b" {
+		t.Fatalf("appendUniqueBranch new = %#v", got)
 	}
 }
 
@@ -599,6 +675,54 @@ func TestDoctorCommand(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "summary:") {
 		t.Fatalf("doctor output = %q, want summary", out.String())
+	}
+}
+
+func TestRenderDoctorReport(t *testing.T) {
+	var out bytes.Buffer
+	renderDoctorReport(&out, &doctor.Report{
+		Checks: []doctor.Check{{Level: doctor.LevelWarn, Message: "drift", Hint: "fix it"}},
+		Summary: doctor.Summary{
+			Warn: 1,
+		},
+	})
+	if got := out.String(); !strings.Contains(got, "WARN drift") || !strings.Contains(got, "fix: fix it") {
+		t.Fatalf("renderDoctorReport() = %q", got)
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	var cfgErr config.Error
+	if got := ExitCode(nil); got != 0 {
+		t.Fatalf("ExitCode(nil) = %d", got)
+	}
+	if got := ExitCode(markUsage(errors.New("bad"))); got != 2 {
+		t.Fatalf("ExitCode(usage) = %d", got)
+	}
+	if got := ExitCode(cfgErr); got != 3 {
+		t.Fatalf("ExitCode(config) = %d", got)
+	}
+	if got := ExitCode(errors.New("boom")); got != 1 {
+		t.Fatalf("ExitCode(default) = %d", got)
+	}
+}
+
+func TestCurrentBranchName(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"branch --show-current": {Stdout: "feature-a"},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	got, err := currentBranchName(context.Background())
+	if err != nil {
+		t.Fatalf("currentBranchName() error = %v", err)
+	}
+	if got != "feature-a" {
+		t.Fatalf("currentBranchName() = %q", got)
 	}
 }
 

@@ -1,0 +1,112 @@
+package cmd
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/lutefd/weaver/internal/config"
+	"github.com/spf13/cobra"
+)
+
+func TestUsageErrorAndMarkUsage(t *testing.T) {
+	t.Parallel()
+
+	if markUsage(nil) != nil {
+		t.Fatal("markUsage(nil) != nil")
+	}
+	err := markUsage(errors.New("bad"))
+	var usageErr usageError
+	if !errors.As(err, &usageErr) || usageErr.Error() != "bad" {
+		t.Fatalf("markUsage() = %v", err)
+	}
+}
+
+func TestLoadConfigDefaultsWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	opts = cliOptions{}
+	t.Cleanup(func() { opts = cliOptions{} })
+
+	cfg, err := loadConfig(repoRoot)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v", err)
+	}
+	if cfg.DefaultBase != "main" {
+		t.Fatalf("DefaultBase = %q", cfg.DefaultBase)
+	}
+}
+
+func TestLoadConfigFromExplicitPath(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	cfgPath := filepath.Join(repoRoot, "custom.yaml")
+	if err := os.WriteFile(cfgPath, []byte("version: 1\ndefault_base: develop\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	opts = cliOptions{ConfigPath: cfgPath}
+	t.Cleanup(func() { opts = cliOptions{} })
+
+	cfg, err := loadConfig(repoRoot)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v", err)
+	}
+	if cfg.DefaultBase != "develop" {
+		t.Fatalf("DefaultBase = %q", cfg.DefaultBase)
+	}
+}
+
+func TestBootstrapAppAndCurrentBranchName(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	repoRoot := t.TempDir()
+	runGit(t, repoRoot, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repoRoot, config.FileName), []byte("version: 1\ndefault_base: main\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd); app = nil; opts = cliOptions{} })
+
+	cmd := &cobra.Command{Use: "status"}
+	cmd.SetOut(io.Discard)
+	if err := bootstrapApp(context.Background(), cmd); err != nil {
+		t.Fatalf("bootstrapApp() error = %v", err)
+	}
+	if AppContext() == nil || AppContext().Config.DefaultBase != "main" {
+		t.Fatalf("AppContext() = %#v", AppContext())
+	}
+}
+
+func TestExecute(t *testing.T) {
+	prev := rootCmd
+	rootCmd = &cobra.Command{
+		Use: "weaver",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return nil
+		},
+	}
+	t.Cleanup(func() { rootCmd = prev })
+
+	if err := Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestResolvedVersion(t *testing.T) {
+	prev := version
+	version = "1.2.3"
+	t.Cleanup(func() { version = prev })
+
+	if got := resolvedVersion(); got != "1.2.3" {
+		t.Fatalf("resolvedVersion() = %q", got)
+	}
+}

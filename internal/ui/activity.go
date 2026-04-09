@@ -35,21 +35,22 @@ type taskClearMsg struct{}
 type taskQuitMsg struct{}
 
 type activityModel struct {
-	theme     Theme
-	spec      TaskSpec
-	spinner   spinner.Model
-	progress  progress.Model
-	spring    harmonica.Spring
-	progressV float64
-	velocity  float64
-	target    float64
-	lastStep  string
-	stepCount int
-	totalOps  int
-	startedAt time.Time
-	visible   bool
-	clearing  bool
-	completed bool
+	theme        Theme
+	spec         TaskSpec
+	spinner      spinner.Model
+	progress     progress.Model
+	spring       harmonica.Spring
+	progressV    float64
+	velocity     float64
+	target       float64
+	lastStep     string
+	stepCount    int
+	completedOps int
+	totalOps     int
+	startedAt    time.Time
+	visible      bool
+	clearing     bool
+	completed    bool
 }
 
 type taskResult[T any] struct {
@@ -169,6 +170,7 @@ func (m activityModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case taskStepMsg:
 		m.stepCount++
+		m.completedOps = msg.completed
 		m.lastStep = msg.label
 		if msg.total > 0 {
 			m.totalOps = msg.total
@@ -207,7 +209,7 @@ func (m activityModel) View() string {
 	}
 
 	meta := []string{
-		m.theme.Badge(ToneInfo, stepSummary(m.stepCount, m.totalOps)),
+		m.theme.Badge(ToneInfo, stepSummary(m.completedOps, m.stepCount, m.totalOps)),
 		m.theme.Muted(humanizeDuration(time.Since(m.startedAt))),
 	}
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, meta[0], "  ", meta[1]))
@@ -372,15 +374,15 @@ func isHex(s string) bool {
 	return len(s) >= 7 && hexPattern.MatchString(s)
 }
 
-func stepSummary(stepCount, totalOps int) string {
+func stepSummary(completed, stepCount, totalOps int) string {
 	if totalOps > 0 {
-		if stepCount < 0 {
-			stepCount = 0
+		if completed < 0 {
+			completed = 0
 		}
-		if stepCount > totalOps {
-			stepCount = totalOps
+		if completed > totalOps {
+			completed = totalOps
 		}
-		return fmt.Sprintf("%d/%d ops", stepCount, totalOps)
+		return fmt.Sprintf("%d/%d ops", completed, totalOps)
 	}
 	if stepCount <= 0 {
 		return "starting"

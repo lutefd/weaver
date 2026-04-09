@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -66,5 +67,65 @@ func TestLoadIntoMissingFile(t *testing.T) {
 	err := LoadInto(v, &cfg)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("LoadInto() error = %v, want %v", err, os.ErrNotExist)
+	}
+}
+
+func TestConfigErrorString(t *testing.T) {
+	t.Parallel()
+
+	if got := (Error{Message: "boom"}).Error(); got != "boom" {
+		t.Fatalf("Error() = %q, want boom", got)
+	}
+}
+
+func TestInitializeRejectsEmptyRepoRoot(t *testing.T) {
+	t.Parallel()
+
+	created, err := Initialize("")
+	if created {
+		t.Fatal("Initialize(\"\") created = true, want false")
+	}
+	var cfgErr Error
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("Initialize(\"\") error = %v, want config.Error", err)
+	}
+}
+
+func TestInitializeReturnsFalseWhenConfigExists(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git", "weaver"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, FileName), []byte("version: 1\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	created, err := Initialize(repoRoot)
+	if err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if created {
+		t.Fatal("Initialize() created = true, want false")
+	}
+}
+
+func TestLoadIntoDecodeError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, FileName)
+	if err := os.WriteFile(cfgPath, []byte("default_base:\n  - nope\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	v := viper.New()
+	v.SetConfigFile(cfgPath)
+	cfg := Config{}
+	err := LoadInto(v, &cfg)
+	var cfgErr Error
+	if !errors.As(err, &cfgErr) || !strings.Contains(err.Error(), "decode config") {
+		t.Fatalf("LoadInto() error = %v, want decode config error", err)
 	}
 }
