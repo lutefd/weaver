@@ -247,6 +247,67 @@ func TestSafeRebaserContinueRequiresCurrentBranch(t *testing.T) {
 	}
 }
 
+func TestSafeRebaserContinueConflictAndLoadError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("conflict on rebase continue", func(t *testing.T) {
+		t.Parallel()
+
+		repoRoot := t.TempDir()
+		store := NewStateStore(repoRoot)
+		if err := store.Save(&State{
+			OriginalBranch: "feature-c",
+			BaseBranch:     "main",
+			AllBranches:    []string{"feature-a", "feature-b"},
+			OriginalTips: map[string]string{
+				"feature-a": "sha-a",
+				"feature-b": "sha-b",
+			},
+			Completed:   []string{"feature-a"},
+			Current:     "feature-b",
+			CurrentOnto: "feature-a",
+		}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		runner := &recordingRunner{
+			repoRoot: repoRoot,
+			results: map[string]gitrunner.Result{
+				"rebase --continue": {ExitCode: 1},
+			},
+			errs: map[string]error{
+				"rebase --continue": errors.New("exit status 1"),
+			},
+		}
+		got, err := (&SafeRebaser{runner: runner, store: store}).Continue(context.Background())
+		if err != nil {
+			t.Fatalf("Continue() error = %v", err)
+		}
+		want := &RebaseResult{
+			OriginalBranch: "feature-c",
+			Completed:      []string{"feature-a"},
+			Current:        "feature-b",
+			CurrentOnto:    "feature-a",
+			Conflict:       true,
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Continue() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("load error", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := (&SafeRebaser{
+			runner: &recordingRunner{repoRoot: t.TempDir()},
+			store:  NewStateStore(t.TempDir()),
+		}).Continue(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "load rebase state") {
+			t.Fatalf("Continue() error = %v, want load rebase state error", err)
+		}
+	})
+}
+
 func TestSafeRebaserAbortIgnoresMissingRebase(t *testing.T) {
 	t.Parallel()
 
@@ -267,6 +328,68 @@ func TestSafeRebaserAbortIgnoresMissingRebase(t *testing.T) {
 	}
 }
 
+func TestSafeRebaserAbortErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("load error", func(t *testing.T) {
+		t.Parallel()
+
+		err := (&SafeRebaser{
+			runner: &recordingRunner{repoRoot: t.TempDir()},
+			store:  NewStateStore(t.TempDir()),
+		}).Abort(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "load rebase state") {
+			t.Fatalf("Abort() error = %v, want load rebase state error", err)
+		}
+	})
+
+	t.Run("rebase abort error", func(t *testing.T) {
+		t.Parallel()
+
+		repoRoot := t.TempDir()
+		store := NewStateStore(repoRoot)
+		if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		err := (&SafeRebaser{
+			runner: &recordingRunner{
+				repoRoot: repoRoot,
+				errs: map[string]error{
+					"rebase --abort": errors.New("boom"),
+				},
+			},
+			store: store,
+		}).Abort(context.Background())
+		if err == nil || err.Error() != "boom" {
+			t.Fatalf("Abort() error = %v, want boom", err)
+		}
+	})
+
+	t.Run("checkout error", func(t *testing.T) {
+		t.Parallel()
+
+		repoRoot := t.TempDir()
+		store := NewStateStore(repoRoot)
+		if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		err := (&SafeRebaser{
+			runner: &recordingRunner{
+				repoRoot: repoRoot,
+				errs: map[string]error{
+					"checkout feature-c": errors.New("checkout failed"),
+				},
+			},
+			store: store,
+		}).Abort(context.Background())
+		if err == nil || err.Error() != "checkout failed" {
+			t.Fatalf("Abort() error = %v, want checkout failed", err)
+		}
+	})
+}
+
 func TestBranchTipsAndCurrentBranchErrors(t *testing.T) {
 	t.Parallel()
 
@@ -285,6 +408,13 @@ func TestBranchTipsAndCurrentBranchErrors(t *testing.T) {
 	_, err = branchTips(context.Background(), &recordingRunner{}, []string{"feature-a"})
 	if err == nil || err.Error() != "resolve branch tip for feature-a: empty revision" {
 		t.Fatalf("branchTips() error = %v, want empty revision error", err)
+	}
+
+	_, err = branchTips(context.Background(), &recordingRunner{
+		errs: map[string]error{"rev-parse feature-a": errors.New("boom")},
+	}, []string{"feature-a"})
+	if err == nil || err.Error() != "resolve branch tip for feature-a: boom" {
+		t.Fatalf("branchTips() error = %v, want wrapped runner error", err)
 	}
 
 	_, err = currentBranch(context.Background(), &recordingRunner{

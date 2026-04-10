@@ -230,6 +230,63 @@ func TestSafeMergerContinueRequiresCurrentBranch(t *testing.T) {
 	}
 }
 
+func TestSafeMergerContinueConflictAndLoadError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("conflict on merge continue", func(t *testing.T) {
+		t.Parallel()
+
+		repoRoot := t.TempDir()
+		store := NewStateStore(repoRoot)
+		if err := store.Save(&State{
+			OriginalBranch: "feature-c",
+			BaseBranch:     "main",
+			AllBranches:    []string{"feature-a", "feature-b"},
+			Completed:      []string{"feature-a"},
+			Current:        "feature-b",
+			CurrentOnto:    "feature-a",
+		}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		runner := &recordingRunner{
+			repoRoot: repoRoot,
+			results: map[string]gitrunner.Result{
+				"merge --continue": {ExitCode: 1},
+			},
+			errs: map[string]error{
+				"merge --continue": errors.New("exit status 1"),
+			},
+		}
+		got, err := (&SafeMerger{runner: runner, store: store}).Continue(context.Background())
+		if err != nil {
+			t.Fatalf("Continue() error = %v", err)
+		}
+		want := &MergeResult{
+			OriginalBranch: "feature-c",
+			Completed:      []string{"feature-a"},
+			Current:        "feature-b",
+			CurrentOnto:    "feature-a",
+			Conflict:       true,
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Continue() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("load error", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := (&SafeMerger{
+			runner: &recordingRunner{repoRoot: t.TempDir()},
+			store:  NewStateStore(t.TempDir()),
+		}).Continue(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "load merge state") {
+			t.Fatalf("Continue() error = %v, want load merge state error", err)
+		}
+	})
+}
+
 func TestSafeMergerAbortIgnoresMissingMerge(t *testing.T) {
 	t.Parallel()
 
@@ -248,6 +305,68 @@ func TestSafeMergerAbortIgnoresMissingMerge(t *testing.T) {
 	if err := (&SafeMerger{runner: runner, store: store}).Abort(context.Background()); err != nil {
 		t.Fatalf("Abort() error = %v", err)
 	}
+}
+
+func TestSafeMergerAbortErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("load error", func(t *testing.T) {
+		t.Parallel()
+
+		err := (&SafeMerger{
+			runner: &recordingRunner{repoRoot: t.TempDir()},
+			store:  NewStateStore(t.TempDir()),
+		}).Abort(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "load merge state") {
+			t.Fatalf("Abort() error = %v, want load merge state error", err)
+		}
+	})
+
+	t.Run("merge abort error", func(t *testing.T) {
+		t.Parallel()
+
+		repoRoot := t.TempDir()
+		store := NewStateStore(repoRoot)
+		if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		err := (&SafeMerger{
+			runner: &recordingRunner{
+				repoRoot: repoRoot,
+				errs: map[string]error{
+					"merge --abort": errors.New("boom"),
+				},
+			},
+			store: store,
+		}).Abort(context.Background())
+		if err == nil || err.Error() != "boom" {
+			t.Fatalf("Abort() error = %v, want boom", err)
+		}
+	})
+
+	t.Run("checkout error", func(t *testing.T) {
+		t.Parallel()
+
+		repoRoot := t.TempDir()
+		store := NewStateStore(repoRoot)
+		if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		err := (&SafeMerger{
+			runner: &recordingRunner{
+				repoRoot: repoRoot,
+				errs: map[string]error{
+					"checkout feature-c": errors.New("checkout failed"),
+				},
+			},
+			store: store,
+		}).Abort(context.Background())
+		if err == nil || err.Error() != "checkout failed" {
+			t.Fatalf("Abort() error = %v, want checkout failed", err)
+		}
+	})
 }
 
 func TestResolveTargetsAndCurrentBranchErrors(t *testing.T) {
@@ -275,6 +394,14 @@ func TestResolveTargetsAndCurrentBranchErrors(t *testing.T) {
 	_, err = currentBranch(context.Background(), &recordingRunner{})
 	if err == nil || err.Error() != "resolve current branch: empty branch name" {
 		t.Fatalf("currentBranch() error = %v, want empty branch error", err)
+	}
+
+	got, err = resolveTargets(dag, "feature-a", "main")
+	if err != nil {
+		t.Fatalf("resolveTargets() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"feature-a"}) {
+		t.Fatalf("resolveTargets() = %#v, want [feature-a]", got)
 	}
 }
 
