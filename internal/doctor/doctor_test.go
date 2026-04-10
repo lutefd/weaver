@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	gitrunner "github.com/lutefd/weaver/internal/git"
 	"github.com/lutefd/weaver/internal/group"
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
+	"github.com/lutefd/weaver/internal/merger"
 	"github.com/lutefd/weaver/internal/rebaser"
 )
 
@@ -216,6 +218,235 @@ func TestCheckerReportsUpstreamDrift(t *testing.T) {
 	}
 }
 
+func TestReportHelpersAndNew(t *testing.T) {
+	t.Parallel()
+
+	report := &Report{}
+	report.add(LevelOK, "ok", "all good")
+	report.addHint(LevelWarn, "warn", "do thing", "warning")
+	report.add(LevelFail, "fail", "broken")
+
+	if report.Summary != (Summary{OK: 1, Warn: 1, Fail: 1}) {
+		t.Fatalf("Summary = %#v", report.Summary)
+	}
+	if !report.HasFailures() {
+		t.Fatal("HasFailures() = false, want true")
+	}
+
+	checker := New(&scriptedRunner{repoRoot: t.TempDir()}, nil, nil)
+	if checker.cfg.DefaultBase != "main" {
+		t.Fatalf("DefaultBase = %q, want main", checker.cfg.DefaultBase)
+	}
+	if checker.branchCache == nil {
+		t.Fatal("branchCache = nil")
+	}
+}
+
+func TestCheckerHelperBranches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("initialization missing", func(t *testing.T) {
+		repoRoot := t.TempDir()
+		report := &Report{}
+		New(&scriptedRunner{repoRoot: repoRoot}, &config.Config{DefaultBase: "main"}, nil).checkInitialization(report)
+		if !containsMessage(report, "weaver is not fully initialized") {
+			t.Fatalf("checkInitialization() = %#v", report.Checks)
+		}
+	})
+
+	t.Run("base branch unborn", func(t *testing.T) {
+		report := &Report{}
+		checker := New(&scriptedRunner{
+			results: map[string]gitrunner.Result{
+				"show-ref --verify --quiet refs/heads/main": {ExitCode: 1},
+				"branch --show-current":                     {Stdout: "main"},
+			},
+			errs: map[string]error{
+				"show-ref --verify --quiet refs/heads/main": errors.New("exit status 1"),
+			},
+		}, &config.Config{DefaultBase: "main"}, nil)
+		checker.checkBaseBranch(context.Background(), report)
+		if !containsMessage(report, "configured base branch is the current unborn branch") {
+			t.Fatalf("checkBaseBranch() = %#v", report.Checks)
+		}
+	})
+
+	t.Run("base branch missing", func(t *testing.T) {
+		report := &Report{}
+		checker := New(&scriptedRunner{
+			results: map[string]gitrunner.Result{
+				"show-ref --verify --quiet refs/heads/main": {ExitCode: 1},
+				"branch --show-current":                     {Stdout: "feature-a"},
+			},
+			errs: map[string]error{
+				"show-ref --verify --quiet refs/heads/main": errors.New("exit status 1"),
+			},
+		}, &config.Config{DefaultBase: "main"}, nil)
+		checker.checkBaseBranch(context.Background(), report)
+		if !containsMessage(report, `configured base branch "main" does not exist locally`) {
+			t.Fatalf("checkBaseBranch() = %#v", report.Checks)
+		}
+	})
+
+	t.Run("current branch detached", func(t *testing.T) {
+		report := &Report{}
+		New(&scriptedRunner{}, &config.Config{DefaultBase: "main"}, nil).checkCurrentBranch(context.Background(), report)
+		if !containsMessage(report, "repository is in detached HEAD state") {
+			t.Fatalf("checkCurrentBranch() = %#v", report.Checks)
+		}
+	})
+
+	t.Run("current branch error", func(t *testing.T) {
+		report := &Report{}
+		New(&scriptedRunner{
+			errs: map[string]error{"branch --show-current": errors.New("boom")},
+		}, &config.Config{DefaultBase: "main"}, nil).checkCurrentBranch(context.Background(), report)
+		if !containsMessage(report, "cannot resolve current branch: boom") {
+			t.Fatalf("checkCurrentBranch() = %#v", report.Checks)
+		}
+	})
+}
+
+func TestCheckerGitHelpers(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	gitDir := filepath.Join(repoRoot, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "MERGE_HEAD"), []byte("head\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	checker := New(&scriptedRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"rev-parse --git-dir": {Stdout: ".git"},
+		},
+	}, &config.Config{DefaultBase: "main"}, nil)
+
+	gotDir, err := checker.gitDir(context.Background())
+	if err != nil {
+		t.Fatalf("gitDir() error = %v", err)
+	}
+	if want := filepath.Join(repoRoot, ".git"); gotDir != want {
+		t.Fatalf("gitDir() = %q, want %q", gotDir, want)
+	}
+
+	report := &Report{}
+	checker.checkGitOperations(context.Background(), report)
+	if !containsMessage(report, "in-progress git operations detected: merge") {
+		t.Fatalf("checkGitOperations() = %#v", report.Checks)
+	}
+
+	emptyChecker := New(&scriptedRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"rev-parse --git-dir": {Stdout: ""},
+		},
+	}, &config.Config{DefaultBase: "main"}, nil)
+	if _, err := emptyChecker.gitDir(context.Background()); err == nil || err.Error() != "empty git dir" {
+		t.Fatalf("gitDir() error = %v, want empty git dir", err)
+	}
+}
+
+func TestCheckerStateAndBranchHelpers(t *testing.T) {
+	t.Parallel()
+
+	report := &Report{}
+	tracked := map[string]struct{}{}
+	checker := New(&scriptedRunner{}, &config.Config{DefaultBase: "main"}, nil)
+	checker.checkPendingStateBranches(context.Background(), report, tracked, "", "", nil, ".git/weaver/rebase-state.yaml")
+	if len(report.Checks) != 3 {
+		t.Fatalf("checkPendingStateBranches() checks = %#v", report.Checks)
+	}
+
+	runner := &scriptedRunner{
+		results: map[string]gitrunner.Result{
+			"show-ref --verify --quiet refs/heads/feature-a": {ExitCode: 1},
+			"for-each-ref --format=%(refname:short)%09%(upstream:short) refs/heads/feature-a": {
+				Stdout: "feature-a\torigin/feature-a",
+			},
+			"rev-list --left-right --count feature-a...origin/feature-a": {Stdout: "3\t2"},
+		},
+		errs: map[string]error{
+			"show-ref --verify --quiet refs/heads/feature-a": errors.New("exit status 1"),
+		},
+	}
+	checker = New(runner, &config.Config{DefaultBase: "main"}, nil)
+
+	exists, err := checker.branchExists(context.Background(), "feature-a")
+	if err != nil {
+		t.Fatalf("branchExists() error = %v", err)
+	}
+	if exists {
+		t.Fatal("branchExists() = true, want false")
+	}
+
+	upstream, hasUpstream, err := checker.upstreamForBranch(context.Background(), "feature-a")
+	if err != nil {
+		t.Fatalf("upstreamForBranch() error = %v", err)
+	}
+	if !hasUpstream || upstream != "origin/feature-a" {
+		t.Fatalf("upstreamForBranch() = %q, %v", upstream, hasUpstream)
+	}
+
+	ahead, behind, err := checker.aheadBehind(context.Background(), "feature-a", "origin/feature-a")
+	if err != nil {
+		t.Fatalf("aheadBehind() error = %v", err)
+	}
+	if ahead != 3 || behind != 2 {
+		t.Fatalf("aheadBehind() = %d, %d", ahead, behind)
+	}
+}
+
+func TestCheckerRebaseStateVariants(t *testing.T) {
+	t.Parallel()
+
+	t.Run("both pending", func(t *testing.T) {
+		repoRoot := t.TempDir()
+		if err := rebaser.NewStateStore(repoRoot).Save(&rebaser.State{Current: "feature-a"}); err != nil {
+			t.Fatalf("Save() rebase error = %v", err)
+		}
+		if err := merger.NewStateStore(repoRoot).Save(&merger.State{Current: "feature-a"}); err != nil {
+			t.Fatalf("Save() merge error = %v", err)
+		}
+
+		report := &Report{}
+		New(&scriptedRunner{repoRoot: repoRoot}, &config.Config{DefaultBase: "main"}, nil).checkRebaseState(context.Background(), report, map[string]struct{}{})
+		if !containsMessage(report, "both rebase and merge stack sync state files are present") {
+			t.Fatalf("checkRebaseState() = %#v", report.Checks)
+		}
+	})
+
+	t.Run("pending merge state", func(t *testing.T) {
+		repoRoot := t.TempDir()
+		if err := merger.NewStateStore(repoRoot).Save(&merger.State{
+			OriginalBranch: "feature-b",
+			BaseBranch:     "main",
+			AllBranches:    []string{"feature-a", "feature-b"},
+			Current:        "feature-b",
+		}); err != nil {
+			t.Fatalf("Save() merge error = %v", err)
+		}
+
+		runner := &scriptedRunner{
+			repoRoot: repoRoot,
+			results: map[string]gitrunner.Result{
+				"show-ref --verify --quiet refs/heads/feature-b": {},
+				"show-ref --verify --quiet refs/heads/main":      {},
+				"show-ref --verify --quiet refs/heads/feature-a": {},
+			},
+		}
+		report := &Report{}
+		New(runner, &config.Config{DefaultBase: "main"}, nil).checkRebaseState(context.Background(), report, map[string]struct{}{})
+		if !containsMessage(report, `pending merge stack sync state detected for "feature-b"`) {
+			t.Fatalf("checkRebaseState() = %#v", report.Checks)
+		}
+	})
+}
+
 func containsMessage(report *Report, fragment string) bool {
 	for _, check := range report.Checks {
 		if strings.Contains(check.Message, fragment) {
@@ -223,6 +454,36 @@ func containsMessage(report *Report, fragment string) bool {
 		}
 	}
 	return false
+}
+
+type scriptedRunner struct {
+	repoRoot string
+	results  map[string]gitrunner.Result
+	errs     map[string]error
+	calls    []string
+}
+
+func (r *scriptedRunner) Run(_ context.Context, args ...string) (gitrunner.Result, error) {
+	key := strings.Join(args, " ")
+	r.calls = append(r.calls, key)
+
+	if result, ok := r.results[key]; ok {
+		if err, hasErr := r.errs[key]; hasErr {
+			if result.ExitCode == 0 {
+				result.ExitCode = 1
+			}
+			return result, err
+		}
+		return result, nil
+	}
+	if err, ok := r.errs[key]; ok {
+		return gitrunner.Result{ExitCode: 1}, err
+	}
+	return gitrunner.Result{}, nil
+}
+
+func (r *scriptedRunner) RepoRoot() string {
+	return r.repoRoot
 }
 
 func initRepo(t *testing.T) string {

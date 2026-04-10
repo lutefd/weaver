@@ -2,9 +2,11 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -302,6 +304,163 @@ func TestAnalyzerIgnoresMergeOnlySharedCommitForForeignAncestry(t *testing.T) {
 	}
 }
 
+func TestReportHelpersAndNewAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	report := &Report{}
+	report.add(LevelOK, "ok", "all good")
+	report.addHint(LevelWarn, "warn", "fix it", "watch out")
+	report.add(LevelFail, "fail", "broken")
+
+	if report.Summary != (Summary{OK: 1, Warn: 1, Fail: 1}) {
+		t.Fatalf("Summary = %#v", report.Summary)
+	}
+	if !report.HasFailures() {
+		t.Fatal("HasFailures() = false, want true")
+	}
+
+	analyzer := NewAnalyzer(&scriptedIntegrationRunner{})
+	if analyzer == nil {
+		t.Fatal("NewAnalyzer() = nil")
+	}
+}
+
+func TestAnalyzerHelperBranches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid recipe", func(t *testing.T) {
+		dag, err := stack.NewDAG(nil)
+		if err != nil {
+			t.Fatalf("NewDAG() error = %v", err)
+		}
+
+		_, err = NewAnalyzer(&scriptedIntegrationRunner{}).Analyze(context.Background(), dag, "", Recipe{})
+		if err == nil || err.Error() != "integration name is required" {
+			t.Fatalf("Analyze() error = %v, want invalid recipe error", err)
+		}
+	})
+
+	t.Run("missing base branch", func(t *testing.T) {
+		dag, err := stack.NewDAG(nil)
+		if err != nil {
+			t.Fatalf("NewDAG() error = %v", err)
+		}
+
+		report, err := NewAnalyzer(&scriptedIntegrationRunner{
+			results: map[string]gitrunner.Result{
+				"show-ref --verify --quiet refs/heads/main": {ExitCode: 1},
+			},
+			errs: map[string]error{
+				"show-ref --verify --quiet refs/heads/main": errors.New("exit status 1"),
+			},
+		}).Analyze(context.Background(), dag, "integration", Recipe{
+			Base:     "main",
+			Branches: []string{"feature-a"},
+		})
+		if err != nil {
+			t.Fatalf("Analyze() error = %v", err)
+		}
+		if !containsMessage(report, `integration base "main" does not exist locally`) {
+			t.Fatalf("Analyze() checks = %#v", report.Checks)
+		}
+	})
+}
+
+func TestAnalyzerUtilityMethods(t *testing.T) {
+	t.Parallel()
+
+	runner := &scriptedIntegrationRunner{
+		results: map[string]gitrunner.Result{
+			"show-ref --verify --quiet refs/heads/feature-a": {ExitCode: 1},
+			"merge-tree --write-tree --messages --name-only main feature-a": {
+				Stdout:   "Auto-merging app.go\nCONFLICT (content): merge conflict in app.go\napi/routes.go\nweb/view.tsx\n",
+				ExitCode: 1,
+			},
+			"rev-list --reverse main..feature-a":      {Stdout: "a1\nb2"},
+			"rev-list --first-parent feature-a":       {Stdout: "c3\nb2\na1"},
+			"merge-base --is-ancestor deadbeef main":  {ExitCode: 1},
+			"merge-base --is-ancestor deadbeef other": {},
+		},
+		errs: map[string]error{
+			"show-ref --verify --quiet refs/heads/feature-a":                errors.New("exit status 1"),
+			"merge-tree --write-tree --messages --name-only main feature-a": errors.New("exit status 1"),
+			"merge-base --is-ancestor deadbeef main":                        errors.New("exit status 1"),
+		},
+	}
+	analyzer := NewAnalyzer(runner)
+
+	exists, err := analyzer.branchExists(context.Background(), "feature-a")
+	if err != nil {
+		t.Fatalf("branchExists() error = %v", err)
+	}
+	if exists {
+		t.Fatal("branchExists() = true, want false")
+	}
+
+	files, risk, err := analyzer.predictConflict(context.Background(), "main", "feature-a")
+	if err != nil {
+		t.Fatalf("predictConflict() error = %v", err)
+	}
+	if !risk {
+		t.Fatal("predictConflict() risk = false, want true")
+	}
+	if !reflect.DeepEqual(files, []string{"api/routes.go", "web/view.tsx"}) {
+		t.Fatalf("predictConflict() files = %#v", files)
+	}
+
+	commits, err := analyzer.branchRange(context.Background(), "main", "feature-a")
+	if err != nil {
+		t.Fatalf("branchRange() error = %v", err)
+	}
+	if !reflect.DeepEqual(commits, []string{"a1", "b2"}) {
+		t.Fatalf("branchRange() = %#v", commits)
+	}
+
+	firstParents, err := analyzer.firstParentSet(context.Background(), "feature-a")
+	if err != nil {
+		t.Fatalf("firstParentSet() error = %v", err)
+	}
+	if len(firstParents) != 3 {
+		t.Fatalf("firstParentSet() = %#v", firstParents)
+	}
+
+	ok, err := analyzer.isAncestorOfAny(context.Background(), "deadbeef", []string{"", "main", "other"})
+	if err != nil {
+		t.Fatalf("isAncestorOfAny() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("isAncestorOfAny() = false, want true")
+	}
+}
+
+func TestIntegrationFormattingHelpers(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	if !relatedInDAG(dag, "feature-a", "feature-b") {
+		t.Fatal("relatedInDAG() = false, want true")
+	}
+	if relatedInDAG(dag, "feature-a", "feature-x") {
+		t.Fatal("relatedInDAG() = true, want false")
+	}
+	if got := shortRef("1234567890abcdef"); got != "1234567890ab" {
+		t.Fatalf("shortRef() = %q", got)
+	}
+	if got := shortRefs([]string{"1234567890abcdef"}); !reflect.DeepEqual(got, []string{"1234567890ab"}) {
+		t.Fatalf("shortRefs() = %#v", got)
+	}
+	if !strings.Contains(manualMergeHint("integration", "feature-a"), `"feature-a"`) {
+		t.Fatalf("manualMergeHint() = %q", manualMergeHint("integration", "feature-a"))
+	}
+	if !strings.Contains(manualMergeHint("integration", ""), "repair the saved integration") {
+		t.Fatalf("manualMergeHint() = %q", manualMergeHint("integration", ""))
+	}
+}
+
 func containsMessage(report *Report, fragment string) bool {
 	for _, check := range report.Checks {
 		if strings.Contains(check.Message, fragment) {
@@ -309,6 +468,32 @@ func containsMessage(report *Report, fragment string) bool {
 		}
 	}
 	return false
+}
+
+type scriptedIntegrationRunner struct {
+	results map[string]gitrunner.Result
+	errs    map[string]error
+}
+
+func (r *scriptedIntegrationRunner) Run(_ context.Context, args ...string) (gitrunner.Result, error) {
+	key := strings.Join(args, " ")
+	if result, ok := r.results[key]; ok {
+		if err, hasErr := r.errs[key]; hasErr {
+			if result.ExitCode == 0 {
+				result.ExitCode = 1
+			}
+			return result, err
+		}
+		return result, nil
+	}
+	if err, ok := r.errs[key]; ok {
+		return gitrunner.Result{ExitCode: 1}, err
+	}
+	return gitrunner.Result{}, nil
+}
+
+func (r *scriptedIntegrationRunner) RepoRoot() string {
+	return ""
 }
 
 func initRepo(t *testing.T) string {
