@@ -180,6 +180,118 @@ func TestSafeMergerAbort(t *testing.T) {
 	}
 }
 
+func TestNew(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	merger := New(&recordingRunner{repoRoot: repoRoot})
+	if merger == nil {
+		t.Fatal("New() = nil")
+	}
+	if got, want := merger.store.path(), filepath.Join(repoRoot, ".git", "weaver", "merge-state.yaml"); got != want {
+		t.Fatalf("store.path() = %q, want %q", got, want)
+	}
+}
+
+func TestSafeMergerRejectsInvalidStart(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	merger := &SafeMerger{runner: &recordingRunner{repoRoot: repoRoot}, store: NewStateStore(repoRoot)}
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-a", Parent: "main"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	if _, err := merger.MergeStack(context.Background(), dag, nil, "main"); err == nil || err.Error() != "at least one branch is required" {
+		t.Fatalf("MergeStack() error = %v, want missing branch error", err)
+	}
+
+	if err := merger.store.Save(&State{}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if _, err := merger.MergeStack(context.Background(), dag, []string{"feature-a"}, "main"); err == nil || err.Error() != "a merge sync is already in progress" {
+		t.Fatalf("MergeStack() error = %v, want pending merge error", err)
+	}
+}
+
+func TestSafeMergerContinueRequiresCurrentBranch(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	store := NewStateStore(repoRoot)
+	if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	_, err := (&SafeMerger{runner: &recordingRunner{repoRoot: repoRoot}, store: store}).Continue(context.Background())
+	if err == nil || err.Error() != "merge state is missing the current branch" {
+		t.Fatalf("Continue() error = %v, want missing current branch error", err)
+	}
+}
+
+func TestSafeMergerAbortIgnoresMissingMerge(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	store := NewStateStore(repoRoot)
+	if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	runner := &recordingRunner{
+		repoRoot: repoRoot,
+		errs: map[string]error{
+			"merge --abort": errors.New("There is no merge to abort"),
+		},
+	}
+	if err := (&SafeMerger{runner: runner, store: store}).Abort(context.Background()); err != nil {
+		t.Fatalf("Abort() error = %v", err)
+	}
+}
+
+func TestResolveTargetsAndCurrentBranchErrors(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-a", Parent: "main"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+	got, err := resolveTargets(dag, "feature-a", "develop")
+	if err != nil {
+		t.Fatalf("resolveTargets() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"main", "feature-a"}) {
+		t.Fatalf("resolveTargets() = %#v", got)
+	}
+
+	_, err = currentBranch(context.Background(), &recordingRunner{
+		errs: map[string]error{"branch --show-current": errors.New("boom")},
+	})
+	if err == nil || err.Error() != "resolve current branch: boom" {
+		t.Fatalf("currentBranch() error = %v, want wrapped error", err)
+	}
+
+	_, err = currentBranch(context.Background(), &recordingRunner{})
+	if err == nil || err.Error() != "resolve current branch: empty branch name" {
+		t.Fatalf("currentBranch() error = %v, want empty branch error", err)
+	}
+}
+
+func TestIsNoMergeInProgress(t *testing.T) {
+	t.Parallel()
+
+	if !isNoMergeInProgress(errors.New("There is no merge to abort")) {
+		t.Fatal("isNoMergeInProgress() = false, want true for standard message")
+	}
+	if !isNoMergeInProgress(errors.New("MERGE_HEAD missing")) {
+		t.Fatal("isNoMergeInProgress() = false, want true for missing MERGE_HEAD")
+	}
+	if isNoMergeInProgress(errors.New("boom")) {
+		t.Fatal("isNoMergeInProgress() = true, want false")
+	}
+}
+
 func TestStateStoreWritesInGitMetadata(t *testing.T) {
 	t.Parallel()
 

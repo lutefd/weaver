@@ -197,6 +197,138 @@ func TestSafeRebaserAbort(t *testing.T) {
 	}
 }
 
+func TestNew(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	rebaser := New(&recordingRunner{repoRoot: repoRoot})
+	if rebaser == nil {
+		t.Fatal("New() = nil")
+	}
+	if got, want := rebaser.store.path(), filepath.Join(repoRoot, ".git", "weaver", "rebase-state.yaml"); got != want {
+		t.Fatalf("store.path() = %q, want %q", got, want)
+	}
+}
+
+func TestSafeRebaserRejectsInvalidStart(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	rebaser := &SafeRebaser{runner: &recordingRunner{repoRoot: repoRoot}, store: NewStateStore(repoRoot)}
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-a", Parent: "main"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	if _, err := rebaser.RebaseStack(context.Background(), dag, nil, "main"); err == nil || err.Error() != "at least one branch is required" {
+		t.Fatalf("RebaseStack() error = %v, want missing branch error", err)
+	}
+
+	if err := rebaser.store.Save(&State{}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if _, err := rebaser.RebaseStack(context.Background(), dag, []string{"feature-a"}, "main"); err == nil || err.Error() != "a rebase is already in progress" {
+		t.Fatalf("RebaseStack() error = %v, want pending rebase error", err)
+	}
+}
+
+func TestSafeRebaserContinueRequiresCurrentBranch(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	store := NewStateStore(repoRoot)
+	if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	_, err := (&SafeRebaser{runner: &recordingRunner{repoRoot: repoRoot}, store: store}).Continue(context.Background())
+	if err == nil || err.Error() != "rebase state is missing the current branch" {
+		t.Fatalf("Continue() error = %v, want missing current branch error", err)
+	}
+}
+
+func TestSafeRebaserAbortIgnoresMissingRebase(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	store := NewStateStore(repoRoot)
+	if err := store.Save(&State{OriginalBranch: "feature-c"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	runner := &recordingRunner{
+		repoRoot: repoRoot,
+		errs: map[string]error{
+			"rebase --abort": errors.New("No rebase in progress"),
+		},
+	}
+	if err := (&SafeRebaser{runner: runner, store: store}).Abort(context.Background()); err != nil {
+		t.Fatalf("Abort() error = %v", err)
+	}
+}
+
+func TestBranchTipsAndCurrentBranchErrors(t *testing.T) {
+	t.Parallel()
+
+	got, err := branchTips(context.Background(), &recordingRunner{
+		results: map[string]gitrunner.Result{
+			"rev-parse feature-a": {Stdout: "sha-a"},
+		},
+	}, []string{"feature-a"})
+	if err != nil {
+		t.Fatalf("branchTips() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, map[string]string{"feature-a": "sha-a"}) {
+		t.Fatalf("branchTips() = %#v", got)
+	}
+
+	_, err = branchTips(context.Background(), &recordingRunner{}, []string{"feature-a"})
+	if err == nil || err.Error() != "resolve branch tip for feature-a: empty revision" {
+		t.Fatalf("branchTips() error = %v, want empty revision error", err)
+	}
+
+	_, err = currentBranch(context.Background(), &recordingRunner{
+		errs: map[string]error{"branch --show-current": errors.New("boom")},
+	})
+	if err == nil || err.Error() != "resolve current branch: boom" {
+		t.Fatalf("currentBranch() error = %v, want wrapped error", err)
+	}
+
+	_, err = currentBranch(context.Background(), &recordingRunner{})
+	if err == nil || err.Error() != "resolve current branch: empty branch name" {
+		t.Fatalf("currentBranch() error = %v, want empty branch error", err)
+	}
+}
+
+func TestRebaseArgsForIndexAndIsNoRebaseInProgress(t *testing.T) {
+	t.Parallel()
+
+	args, err := rebaseArgsForIndex(&State{}, 0, "main")
+	if err != nil {
+		t.Fatalf("rebaseArgsForIndex() error = %v", err)
+	}
+	if !reflect.DeepEqual(args, []string{"rebase", "--autostash", "main"}) {
+		t.Fatalf("rebaseArgsForIndex() = %#v", args)
+	}
+
+	_, err = rebaseArgsForIndex(&State{
+		AllBranches: []string{"feature-a", "feature-b"},
+		OriginalTips: map[string]string{
+			"feature-b": "sha-b",
+		},
+	}, 1, "feature-a")
+	if err == nil || err.Error() != "missing original tip for feature-a" {
+		t.Fatalf("rebaseArgsForIndex() error = %v, want missing tip error", err)
+	}
+
+	if !isNoRebaseInProgress(errors.New("No rebase in progress")) {
+		t.Fatal("isNoRebaseInProgress() = false, want true")
+	}
+	if isNoRebaseInProgress(errors.New("boom")) {
+		t.Fatal("isNoRebaseInProgress() = true, want false")
+	}
+}
+
 type recordingRunner struct {
 	repoRoot string
 	results  map[string]gitrunner.Result

@@ -271,6 +271,116 @@ func TestComposeConflictAbortsAndRestoresBranch(t *testing.T) {
 	}
 }
 
+func TestConflictError(t *testing.T) {
+	t.Parallel()
+
+	err := ConflictError{
+		Branch: "feature-a",
+		Files:  []string{"app.go"},
+		Err:    errors.New("exit status 1"),
+	}
+
+	if got := err.Error(); got != "compose conflict on feature-a: exit status 1" {
+		t.Fatalf("Error() = %q", got)
+	}
+	if !errors.Is(err, err.Err) {
+		t.Fatalf("Unwrap() did not expose inner error")
+	}
+}
+
+func TestResolveOrder(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{{Branch: "feature-b", Parent: "feature-a"}})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got, err := ResolveOrder(dag, []string{"feature-b"}, "main")
+	if err != nil {
+		t.Fatalf("ResolveOrder() error = %v", err)
+	}
+	want := []string{"feature-a", "feature-b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveOrder() = %#v, want %#v", got, want)
+	}
+}
+
+func TestCurrentBranch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ok", func(t *testing.T) {
+		got, err := currentBranch(context.Background(), &composeRunner{
+			results: map[string]gitrunner.Result{
+				"branch --show-current": {Stdout: "topic"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("currentBranch() error = %v", err)
+		}
+		if got != "topic" {
+			t.Fatalf("currentBranch() = %q, want %q", got, "topic")
+		}
+	})
+
+	t.Run("runner error", func(t *testing.T) {
+		_, err := currentBranch(context.Background(), &composeRunner{
+			errs: map[string]error{"branch --show-current": errors.New("boom")},
+		})
+		if err == nil || err.Error() != "resolve current branch: boom" {
+			t.Fatalf("currentBranch() error = %v, want wrapped runner error", err)
+		}
+	})
+
+	t.Run("empty branch", func(t *testing.T) {
+		_, err := currentBranch(context.Background(), &composeRunner{})
+		if err == nil || err.Error() != "resolve current branch: empty branch name" {
+			t.Fatalf("currentBranch() error = %v, want empty branch error", err)
+		}
+	})
+}
+
+func TestAbortMerge(t *testing.T) {
+	t.Parallel()
+
+	if err := abortMerge(context.Background(), &composeRunner{
+		errs: map[string]error{"merge --abort": errors.New("MERGE_HEAD missing")},
+	}); err != nil {
+		t.Fatalf("abortMerge() error = %v", err)
+	}
+
+	err := abortMerge(context.Background(), &composeRunner{
+		errs: map[string]error{"merge --abort": errors.New("boom")},
+	})
+	if err == nil || err.Error() != "boom" {
+		t.Fatalf("abortMerge() error = %v, want hard failure", err)
+	}
+}
+
+func TestConflictedFiles(t *testing.T) {
+	t.Parallel()
+
+	got, err := conflictedFiles(context.Background(), &composeRunner{
+		results: map[string]gitrunner.Result{
+			"diff --name-only --diff-filter=U": {Stdout: "app.go\nweb.ts"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("conflictedFiles() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"app.go", "web.ts"}) {
+		t.Fatalf("conflictedFiles() = %#v", got)
+	}
+
+	got, err = conflictedFiles(context.Background(), &composeRunner{})
+	if err != nil {
+		t.Fatalf("conflictedFiles() error = %v", err)
+	}
+	if got != nil {
+		t.Fatalf("conflictedFiles() = %#v, want nil", got)
+	}
+}
+
 type composeRunner struct {
 	results map[string]gitrunner.Result
 	errs    map[string]error
