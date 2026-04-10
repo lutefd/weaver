@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -64,5 +65,26 @@ func TestNewExportAndDecodeExportErrors(t *testing.T) {
 	_, err := DecodeExport(bytes.NewBufferString("{"))
 	if err == nil || !strings.Contains(err.Error(), "decode integration export:") {
 		t.Fatalf("DecodeExport() error = %v, want wrapped decode error", err)
+	}
+}
+
+func TestEncodeExportNilAndDecodeExportDefaults(t *testing.T) {
+	t.Parallel()
+
+	if err := EncodeExport(io.Discard, nil); err == nil || err.Error() != "integration export is required" {
+		t.Fatalf("EncodeExport() error = %v, want nil export error", err)
+	}
+
+	state, err := DecodeExport(bytes.NewBufferString(`{"exported_at":"2026-04-07T14:30:00Z","integration":{"name":"integration","base":"main","branches":["feature-a"]}}`))
+	if err != nil {
+		t.Fatalf("DecodeExport() error = %v", err)
+	}
+	if state.Version != 1 {
+		t.Fatalf("DecodeExport().Version = %d, want 1", state.Version)
+	}
+
+	_, err = DecodeExport(bytes.NewBufferString(`{"version":1,"exported_at":"2026-04-07T14:30:00Z","integration":{"name":"","base":"main","branches":["feature-a"]}}`))
+	if err == nil || err.Error() != "integration name is required" {
+		t.Fatalf("DecodeExport() error = %v, want validation error", err)
 	}
 }

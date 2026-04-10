@@ -129,3 +129,72 @@ func TestLoadIntoDecodeError(t *testing.T) {
 		t.Fatalf("LoadInto() error = %v, want decode config error", err)
 	}
 }
+
+func TestLoadIntoReadErrorAndInitializeMetadataDirError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config-dir")
+	if err := os.MkdirAll(cfgPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	v := viper.New()
+	v.SetConfigFile(cfgPath)
+	cfg := Config{}
+	err := LoadInto(v, &cfg)
+	var cfgErr Error
+	if !errors.As(err, &cfgErr) || !strings.Contains(err.Error(), "read config") {
+		t.Fatalf("LoadInto() error = %v, want read config error", err)
+	}
+
+	repoRoot := filepath.Join(t.TempDir(), "repo-root-file")
+	if err := os.WriteFile(repoRoot, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	created, err := Initialize(repoRoot)
+	if created {
+		t.Fatal("Initialize() created = true, want false")
+	}
+	if !errors.As(err, &cfgErr) || !strings.Contains(err.Error(), "create metadata directory") {
+		t.Fatalf("Initialize() error = %v, want metadata directory error", err)
+	}
+}
+
+func TestLoadIntoVersionDefaultAndInitializeWriteError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, FileName)
+	if err := os.WriteFile(cfgPath, []byte("version: 0\ndefault_base: \"\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	v := viper.New()
+	v.SetConfigFile(cfgPath)
+	cfg := Config{}
+	if err := LoadInto(v, &cfg); err != nil {
+		t.Fatalf("LoadInto() error = %v", err)
+	}
+	if cfg.Version != VersionOne || cfg.DefaultBase != "main" {
+		t.Fatalf("LoadInto() = %#v, want version %d and default base main", cfg, VersionOne)
+	}
+
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git", "weaver"), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.Chmod(repoRoot, 0o555); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(repoRoot, 0o755) })
+
+	created, err := Initialize(repoRoot)
+	if created {
+		t.Fatal("Initialize() created = true, want false")
+	}
+	var cfgErr Error
+	if !errors.As(err, &cfgErr) || !strings.Contains(err.Error(), "write config file") {
+		t.Fatalf("Initialize() error = %v, want write config file error", err)
+	}
+}

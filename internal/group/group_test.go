@@ -124,3 +124,42 @@ func TestStoreValidationAndDecodeErrors(t *testing.T) {
 		t.Fatalf("List() error = %v, want decode groups file", err)
 	}
 }
+
+func TestStoreReadDefaultsAndWriteErrors(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(store.path()), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(store.path(), []byte("version: 0\ngroups:\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	groups, err := store.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("List() = %#v, want empty groups", groups)
+	}
+
+	repoRoot := filepath.Join(t.TempDir(), "repo-root-file")
+	if err := os.WriteFile(repoRoot, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := NewStore(repoRoot).Replace(map[string][]string{"sprint": {"feature-a"}}); err == nil || !strings.Contains(err.Error(), "create groups directory") {
+		t.Fatalf("Replace() error = %v, want create groups directory error", err)
+	}
+
+	writeStore := NewStore(t.TempDir())
+	if err := os.MkdirAll(writeStore.dir(), 0o755); err != nil {
+		t.Fatalf("MkdirAll(dir) error = %v", err)
+	}
+	if err := os.MkdirAll(writeStore.path(), 0o755); err != nil {
+		t.Fatalf("MkdirAll(path) error = %v", err)
+	}
+	if err := writeStore.Replace(map[string][]string{"sprint": {"feature-a"}}); err == nil || !strings.Contains(err.Error(), "write groups file") {
+		t.Fatalf("Replace() error = %v, want write groups file error", err)
+	}
+}

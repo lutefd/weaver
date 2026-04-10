@@ -159,3 +159,51 @@ func TestLoadFile(t *testing.T) {
 		t.Fatalf("Dependencies = %#v", state.Dependencies)
 	}
 }
+
+func TestExportImportAndLoadFileErrors(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := filepath.Join(t.TempDir(), "repo-root-file")
+	if err := os.WriteFile(repoRoot, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := New(repoRoot).Export(); err == nil {
+		t.Fatal("Export() error = nil, want file-backed repo root error")
+	}
+
+	manager := New(t.TempDir())
+	err := manager.Import(&State{
+		Dependencies: map[string]string{"feature-b": "feature-a"},
+		Groups:       map[string][]string{"sprint": {"feature-a"}},
+		Integrations: map[string]weaverintegration.Recipe{
+			"integration": {},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), `integration "integration" base is required`) {
+		t.Fatalf("Import() error = %v, want integration validation error", err)
+	}
+
+	if _, err := LoadFile(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("LoadFile() error = nil, want open error")
+	}
+}
+
+func TestExportErrorPropagation(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git", "weaver", "groups.yaml"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(group path) error = %v", err)
+	}
+	if _, err := New(repoRoot).Export(); err == nil || !strings.Contains(err.Error(), "read groups file") {
+		t.Fatalf("Export() error = %v, want read groups file error", err)
+	}
+
+	repoRoot = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git", "weaver", "integrations.yaml"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(integration path) error = %v", err)
+	}
+	if _, err := New(repoRoot).Export(); err == nil || !strings.Contains(err.Error(), "read integrations file") {
+		t.Fatalf("Export() error = %v, want read integrations file error", err)
+	}
+}
