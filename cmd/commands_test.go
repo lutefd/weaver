@@ -442,6 +442,11 @@ func TestFormatComposeConflictError(t *testing.T) {
 	if got := err.Error(); !strings.Contains(got, "feature-a") || !strings.Contains(got, "a.go, b.go") {
 		t.Fatalf("formatComposeConflictError() = %q", got)
 	}
+
+	err = formatComposeConflictError(composer.ConflictError{Branch: "feature-b"})
+	if got := err.Error(); got != "compose failed while merging feature-b" {
+		t.Fatalf("formatComposeConflictError() = %q", got)
+	}
 }
 
 func TestRenderManualMergeSummary(t *testing.T) {
@@ -452,6 +457,27 @@ func TestRenderManualMergeSummary(t *testing.T) {
 	})
 	if got := out.String(); !strings.Contains(got, "manual merge required onto integration: feature-a") {
 		t.Fatalf("renderManualMergeSummary() = %q", got)
+	}
+
+	out.Reset()
+	renderManualMergeSummary(&out, &composer.ComposeResult{
+		UpdatedBranch: "integration",
+		Skipped:       []string{"feature-b"},
+	})
+	if got := out.String(); !strings.Contains(got, "manual merge required onto integration: feature-b") {
+		t.Fatalf("renderManualMergeSummary() updated = %q", got)
+	}
+
+	out.Reset()
+	renderManualMergeSummary(&out, &composer.ComposeResult{Skipped: []string{"feature-c"}})
+	if got := out.String(); !strings.Contains(got, "manual merge still required for skipped branches: feature-c") {
+		t.Fatalf("renderManualMergeSummary() ephemeral = %q", got)
+	}
+
+	out.Reset()
+	renderManualMergeSummary(&out, nil)
+	if out.Len() != 0 {
+		t.Fatalf("renderManualMergeSummary(nil) = %q", out.String())
 	}
 }
 
@@ -483,6 +509,27 @@ func TestPromptSkipOnComposeConflict(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "app/service.go") {
 		t.Fatalf("prompt output = %q, want conflicted file", out.String())
+	}
+}
+
+func TestPromptSkipOnComposeConflictRetriesAndAborts(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetIn(bytes.NewBufferString("later\nabort\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	skip, err := promptSkipOnComposeConflict(cmd, composer.ConflictError{
+		Branch: "feature-b",
+		Err:    errors.New("exit status 1"),
+	})
+	if err != nil {
+		t.Fatalf("promptSkipOnComposeConflict() error = %v", err)
+	}
+	if skip {
+		t.Fatal("promptSkipOnComposeConflict() = true, want false")
+	}
+	if !strings.Contains(out.String(), "please answer skip or abort") {
+		t.Fatalf("prompt output = %q, want retry hint", out.String())
 	}
 }
 
