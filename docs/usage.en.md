@@ -24,6 +24,21 @@ This creates:
 - `.weaver.yaml`
 - `.git/weaver/`
 
+## Choose the Right Command
+
+- Use `weaver stack` and `weaver unstack` to declare or change the branch dependency graph.
+- Use `weaver deps`, `weaver status`, and `weaver doctor` when you want read-only visibility into the current stack state.
+- Use `weaver update` when you want to refresh local branches from their own configured upstream refs.
+- Use `weaver sync` when you want to bring a stack back into dependency order by applying each parent into its child.
+- Use `weaver compose` when you want to preview or materialize the combined result of several branches on top of a base without changing the source branches.
+- Use `weaver integration ...` when a compose recipe should be saved, named, reused, and shared across clones.
+
+The important distinction is:
+
+- `weaver update` follows each branch's upstream branch, such as `origin/feature-a`.
+- `weaver sync` follows your declared stack parent, such as `feature-a` onto `main` and `feature-b` onto `feature-a`.
+- `weaver compose` does not update the stack branches themselves. It tests or builds their combined result on top of a chosen base.
+
 ## Declare a Stack
 
 Declare that `feature-b` depends on `feature-a`:
@@ -130,6 +145,20 @@ weaver update --integration integration
 
 ## Rebase a Stack
 
+Use the default rebase mode when:
+
+- you want clean, linear stacked-diff history
+- you are comfortable rewriting branch history and force-pushing afterward
+- the stack is mostly owned by one person or by a team already working in a rebase-first way
+
+Use merge mode instead when:
+
+- the branches already have open PRs or active review comments
+- other people may already be consuming those exact branch tips
+- preserving branch history matters more than keeping it linear
+
+In Weaver terms, rebase keeps the stack cleaner, while merge keeps the branch history more stable.
+
 Rebase the full stack that leads to `feature-c`:
 
 ```bash
@@ -156,6 +185,8 @@ weaver abort
 ```
 
 `continue` resumes after you resolve conflicts manually. `abort` stops the operation and returns to the original branch. The same commands work for both rebase-based and merge-based stack sync.
+
+`weaver update` is not a substitute for `weaver sync` or `weaver sync --merge`. `update` only refreshes branches from their configured upstreams. It does not pull `main` into `feature-a`, and it does not pull `feature-a` into `feature-b`.
 
 ## Compose Branches
 
@@ -184,6 +215,14 @@ weaver compose --integration integration --create integration-preview --skip fea
 ```
 
 Compose is ephemeral by default. It uses detached `HEAD`, performs the merges, and returns you to the original branch.
+
+Use `weaver compose` when you need to answer questions like:
+
+- "Do these branches merge cleanly together on top of `main`?"
+- "Can I create an integration branch for QA or staging?"
+- "Which branch is the noisy outlier that should be skipped and merged manually later?"
+
+Prefer `weaver sync` when the goal is to update the actual stack branches. Prefer `weaver compose` when the goal is to inspect or build the combined result.
 
 If you want a new integration branch created from the composed result, opt in explicitly:
 

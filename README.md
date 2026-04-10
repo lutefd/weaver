@@ -111,6 +111,23 @@ weaver compose --integration integration --create integration-preview --skip fea
 weaver compose --integration integration --update integration
 ```
 
+## Choosing a Command
+
+- Use `weaver stack` and `weaver unstack` to declare or change parent-child relationships between branches.
+- Use `weaver deps`, `weaver status`, and `weaver doctor` to inspect the stack before changing anything.
+- Use `weaver update` to refresh local branches from their own configured upstream refs. This does not sync a branch with its stack parent or with the repo base branch.
+- Use `weaver sync` to bring a stack back into dependency order by applying each parent into its child.
+- Use `weaver compose` to test or materialize the combined result of several branches on top of a base branch without modifying the source branches themselves.
+- Use `weaver integration ...` when the same compose recipe should be reusable and shared by name.
+
+## Choosing Rebase or Merge
+
+- Use `weaver sync` when you want the clean stacked-diff workflow: linear branch history, parent changes replayed into children, and you are comfortable force-pushing updated branches afterward.
+- Use `weaver sync --merge` when the branches already have open PRs, review comments, or other consumers and you want to preserve existing branch history instead of rewriting it.
+- Rebase produces cleaner history, but everyone touching that stack needs to be disciplined about rebasing and force-pushing.
+- Merge preserves branch history, but it accumulates merge commits and usually gets noisier over time.
+- `weaver update` is not a substitute for either strategy. It only fast-forwards each branch from its configured upstream.
+
 ## Files and State
 
 Weaver uses local metadata inside `.git/weaver/`.
