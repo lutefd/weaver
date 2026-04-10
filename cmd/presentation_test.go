@@ -130,3 +130,76 @@ func TestRenderHelpers(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderComposeResultStyledModes(t *testing.T) {
+	t.Parallel()
+
+	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
+
+	preview := renderComposeResultStyled(term, &composer.ComposeResult{
+		DryRun:        true,
+		BaseBranch:    "main",
+		Order:         []string{"feature-a", "feature-b"},
+		CreatedBranch: "integration",
+	})
+	for _, want := range []string{"Compose Preview", "ephemeral", "feature-a → feature-b"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("renderComposeResultStyled() preview missing %q in %q", want, preview)
+		}
+	}
+	if strings.Contains(preview, "target") {
+		t.Fatalf("renderComposeResultStyled() preview unexpectedly rendered target: %q", preview)
+	}
+
+	update := renderComposeResultStyled(term, &composer.ComposeResult{
+		BaseBranch:    "main",
+		Order:         []string{"feature-a"},
+		UpdatedBranch: "integration",
+	})
+	for _, want := range []string{"Compose Complete", "update", "integration"} {
+		if !strings.Contains(update, want) {
+			t.Fatalf("renderComposeResultStyled() update missing %q in %q", want, update)
+		}
+	}
+}
+
+func TestRenderUpdateResultStyledNoChanges(t *testing.T) {
+	t.Parallel()
+
+	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
+	got := renderUpdateResultStyled(term, &updater.UpdateResult{OriginalBranch: "topic"})
+	for _, want := range []string{"Update Complete", "topic", "no branches changed"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderUpdateResultStyled() missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestRenderCheckLevelsWithoutHint(t *testing.T) {
+	t.Parallel()
+
+	theme := ui.NewTheme(ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{}))
+	cases := []struct {
+		level string
+		want  string
+	}{
+		{level: "ok", want: "OK"},
+		{level: "fail", want: "FAIL"},
+		{level: "mystery", want: "MYSTERY"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.level, func(t *testing.T) {
+			t.Parallel()
+
+			got := renderCheck(theme, tc.level, "message", "")
+			if !strings.Contains(got, tc.want) || !strings.Contains(got, "message") {
+				t.Fatalf("renderCheck() = %q, want level %q and message", got, tc.want)
+			}
+			if strings.Contains(got, "fix") {
+				t.Fatalf("renderCheck() = %q, want no fix hint", got)
+			}
+		})
+	}
+}

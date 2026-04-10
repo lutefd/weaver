@@ -381,6 +381,88 @@ func TestResolveBranchSelectionIntegration(t *testing.T) {
 	}
 }
 
+func TestResolveBranchSelectionFlagError(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	_, err := resolveBranchSelection(repoRoot, nil, &cobra.Command{})
+	if err == nil || !strings.Contains(err.Error(), "flag accessed but not defined") {
+		t.Fatalf("resolveBranchSelection() error = %v, want flag error", err)
+	}
+}
+
+func TestResolveBranchSelectionModeAdditionalCases(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	if err := group.NewStore(repoRoot).Create("empty", nil); err != nil {
+		t.Fatalf("Create(empty) error = %v", err)
+	}
+	if err := deps.NewLocalSource(repoRoot).Replace(map[string]string{
+		"feature-b": "feature-a",
+		"feature-a": "main",
+	}); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	_, err := resolveBranchSelectionMode(repoRoot, []string{"feature-a"}, "sprint-42", "", false)
+	var usageErr usageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveBranchSelectionMode() error = %v, want usageError", err)
+	}
+
+	_, err = resolveBranchSelectionMode(repoRoot, nil, "missing", "", false)
+	if err == nil || !strings.Contains(err.Error(), `group "missing" does not exist`) {
+		t.Fatalf("resolveBranchSelectionMode() error = %v, want missing group error", err)
+	}
+
+	_, err = resolveBranchSelectionMode(repoRoot, nil, "empty", "", false)
+	if err == nil || !strings.Contains(err.Error(), `group "empty" is empty`) {
+		t.Fatalf("resolveBranchSelectionMode() error = %v, want empty group error", err)
+	}
+
+	_, err = resolveBranchSelectionMode(repoRoot, nil, "", "missing", false)
+	if err == nil || !strings.Contains(err.Error(), `integration "missing" does not exist`) {
+		t.Fatalf("resolveBranchSelectionMode() error = %v, want missing integration error", err)
+	}
+
+	selection, err := resolveBranchSelectionMode(repoRoot, nil, "", "", true)
+	if err != nil {
+		t.Fatalf("resolveBranchSelectionMode() error = %v", err)
+	}
+	if got := strings.Join(selection.Branches, ","); got != "feature-a,feature-b" {
+		t.Fatalf("resolveBranchSelectionMode() branches = %q, want feature-a,feature-b", got)
+	}
+}
+
+func TestResolveBranchSelectionAdditionalFlagErrors(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("group", "", "group")
+	cmd.Flags().String("all", "", "all")
+	_, err := resolveBranchSelection(repoRoot, nil, cmd)
+	if err == nil || !strings.Contains(err.Error(), "trying to get bool value") {
+		t.Fatalf("resolveBranchSelection() error = %v, want bool flag error", err)
+	}
+
+	cmd = &cobra.Command{}
+	cmd.Flags().String("group", "", "group")
+	cmd.Flags().Bool("all", false, "all")
+	cmd.Flags().Int("integration", 0, "integration")
+	_, err = resolveBranchSelection(repoRoot, nil, cmd)
+	if err == nil || !strings.Contains(err.Error(), "trying to get string value") {
+		t.Fatalf("resolveBranchSelection() error = %v, want integration string flag error", err)
+	}
+
+	_, err = resolveBranchSelectionMode(repoRoot, nil, "", "", false)
+	var usageErr usageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("resolveBranchSelectionMode() error = %v, want usageError", err)
+	}
+}
+
 func TestResolveComposeOptions(t *testing.T) {
 	cmd := cloneComposeCommand()
 	cmd.Flags().Set("dry-run", "true")

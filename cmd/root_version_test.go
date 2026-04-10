@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -125,6 +126,20 @@ func TestResolvedVersionFallsBackToBuildInfoOrDev(t *testing.T) {
 
 	if got := resolvedVersion(); got != want {
 		t.Fatalf("resolvedVersion() = %q, want %q", got, want)
+	}
+}
+
+func TestVersionCommandWritesResolvedVersion(t *testing.T) {
+	prev := version
+	version = "9.9.9"
+	t.Cleanup(func() { version = prev })
+
+	var out bytes.Buffer
+	versionCmd.SetOut(&out)
+	versionCmd.Run(versionCmd, nil)
+
+	if got := strings.TrimSpace(out.String()); got != "9.9.9" {
+		t.Fatalf("version command output = %q, want %q", got, "9.9.9")
 	}
 }
 
