@@ -28,6 +28,7 @@ func init() {
 	integrationCmd.AddCommand(integrationDoctorCmd)
 	integrationCmd.AddCommand(integrationExportCmd)
 	integrationCmd.AddCommand(integrationImportCmd)
+	integrationCmd.AddCommand(integrationBranchCmd)
 	rootCmd.AddCommand(integrationCmd)
 }
 

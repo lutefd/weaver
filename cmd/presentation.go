@@ -188,6 +188,21 @@ func renderIntegrationListStyled(term ui.Terminal, recipes map[string]weaverinte
 	return renderActionCard(term, ui.ToneInfo, "Integrations", "Saved integration strategies", []ui.KeyValue{{Label: "count", Value: fmt.Sprintf("%d", len(names))}}, lines)
 }
 
+func renderTrackedIntegrationBranchListStyled(term ui.Terminal, entries []trackedIntegrationBranchEntry) string {
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		line := fmt.Sprintf("%s  [%s]  base=%s  branches=%s", entry.Name, entry.Status(), entry.Record.Base, formatTrackedBranchSlice(entry.Record.Branches))
+		if len(entry.Record.Skipped) > 0 {
+			line += "  skipped=" + strings.Join(entry.Record.Skipped, ", ")
+		}
+		if entry.Record.Integration != "" {
+			line += "  integration=" + entry.Record.Integration
+		}
+		lines = append(lines, line)
+	}
+	return renderActionCard(term, ui.ToneInfo, "Integration Branches", "Tracked branches created by compose --create", []ui.KeyValue{{Label: "count", Value: fmt.Sprintf("%d", len(entries))}}, lines)
+}
+
 func renderGroupListStyled(term ui.Terminal, groups map[string][]string) string {
 	names := make([]string, 0, len(groups))
 	for name := range groups {

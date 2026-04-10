@@ -11,6 +11,7 @@ import (
 	"github.com/lutefd/weaver/internal/composer"
 	"github.com/lutefd/weaver/internal/deps"
 	gitrunner "github.com/lutefd/weaver/internal/git"
+	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/lutefd/weaver/internal/resolver"
 	"github.com/lutefd/weaver/internal/stack"
 	"github.com/lutefd/weaver/internal/ui"
@@ -72,6 +73,9 @@ var composeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := recordComposeIntegrationBranch(selection, result); err != nil {
+			return err
+		}
 
 		if result.DryRun {
 			term := terminalFor(cmd)
@@ -113,6 +117,33 @@ var composeCmd = &cobra.Command{
 		renderManualMergeSummary(cmd.OutOrStdout(), result)
 		return nil
 	},
+}
+
+func recordComposeIntegrationBranch(selection branchSelection, result *composer.ComposeResult) error {
+	if result == nil || result.DryRun {
+		return nil
+	}
+
+	record := weaverintegration.BranchRecord{
+		Base:        result.BaseBranch,
+		Branches:    append([]string(nil), result.Order...),
+		Skipped:     append([]string(nil), result.Skipped...),
+		Integration: selection.IntegrationName,
+	}
+	store := weaverintegration.NewBranchStore(AppContext().Runner.RepoRoot())
+
+	switch {
+	case result.CreatedBranch != "":
+		if err := store.Track(result.CreatedBranch, record); err != nil {
+			return fmt.Errorf("track integration branch %q: %w", result.CreatedBranch, err)
+		}
+	case result.UpdatedBranch != "":
+		if err := store.Track(result.UpdatedBranch, record); err != nil {
+			return fmt.Errorf("track integration branch %q: %w", result.UpdatedBranch, err)
+		}
+	}
+
+	return nil
 }
 
 func resolveComposeOptions(cmd *cobra.Command, base string) (composer.ComposeOpts, error) {

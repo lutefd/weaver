@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ import (
 	weaverintegration "github.com/lutefd/weaver/internal/integration"
 	"github.com/lutefd/weaver/internal/merger"
 	"github.com/lutefd/weaver/internal/stack"
+	"github.com/lutefd/weaver/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -79,6 +81,122 @@ func TestIntegrationCommands(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "base: main") || !strings.Contains(got, "feature-a -> feature-b") {
 		t.Fatalf("integration show output = %q", got)
+	}
+}
+
+func TestIntegrationBranchCommands(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"branch --show-current":                          {Stdout: "feature-b"},
+			"show-ref --verify --quiet refs/heads/release-1": {ExitCode: 1},
+		},
+		errs: map[string]error{
+			"show-ref --verify --quiet refs/heads/release-1": errors.New("exit status 1"),
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	store := weaverintegration.NewBranchStore(repoRoot)
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:        "main",
+		Branches:    []string{"feature-a", "feature-b"},
+		Skipped:     []string{"feature-c"},
+		Integration: "staging",
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	integrationBranchListCmd.SetOut(&out)
+	if err := integrationBranchListCmd.RunE(integrationBranchListCmd, nil); err != nil {
+		t.Fatalf("integration branch list error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "release-1: status=missing") || !strings.Contains(got, "integration=staging") {
+		t.Fatalf("integration branch list output = %q", got)
+	}
+
+	out.Reset()
+	integrationBranchDeleteCmd.SetOut(&out)
+	if err := integrationBranchDeleteCmd.RunE(integrationBranchDeleteCmd, []string{"release-1"}); err != nil {
+		t.Fatalf("integration branch delete error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "removed tracked integration branch release-1") {
+		t.Fatalf("integration branch delete output = %q", got)
+	}
+	if _, ok, err := store.Get("release-1"); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	} else if ok {
+		t.Fatal("Get() ok = true, want false")
+	}
+}
+
+func TestIntegrationBranchDeleteCommandDeletesGitBranch(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"branch --show-current":                          {Stdout: "feature-b"},
+			"show-ref --verify --quiet refs/heads/release-1": {},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	store := weaverintegration.NewBranchStore(repoRoot)
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	integrationBranchDeleteCmd.SetOut(&out)
+	if err := integrationBranchDeleteCmd.RunE(integrationBranchDeleteCmd, []string{"release-1"}); err != nil {
+		t.Fatalf("integration branch delete error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "deleted integration branch release-1") {
+		t.Fatalf("integration branch delete output = %q", got)
+	}
+
+	wantCalls := []string{
+		"show-ref --verify --quiet refs/heads/release-1",
+		"branch --show-current",
+		"branch -D release-1",
+	}
+	if got := runner.calls; strings.Join(got, "\n") != strings.Join(wantCalls, "\n") {
+		t.Fatalf("calls = %#v, want %#v", got, wantCalls)
+	}
+}
+
+func TestIntegrationBranchDeleteCommandRejectsCurrentBranch(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"branch --show-current":                          {Stdout: "release-1"},
+			"show-ref --verify --quiet refs/heads/release-1": {},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	store := weaverintegration.NewBranchStore(repoRoot)
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	err := integrationBranchDeleteCmd.RunE(integrationBranchDeleteCmd, []string{"release-1"})
+	if err == nil || !strings.Contains(err.Error(), `cannot delete current branch "release-1"`) {
+		t.Fatalf("integration branch delete error = %v, want current branch error", err)
+	}
+	if _, ok, err := store.Get("release-1"); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	} else if !ok {
+		t.Fatal("Get() ok = false, want true")
 	}
 }
 
@@ -510,6 +628,127 @@ func TestResolveComposeOptions(t *testing.T) {
 	}
 }
 
+func TestRecordComposeIntegrationBranch(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	selection := branchSelection{IntegrationName: "staging"}
+	result := &composer.ComposeResult{
+		BaseBranch:    "main",
+		Order:         []string{"feature-a", "feature-b"},
+		Skipped:       []string{"feature-c"},
+		CreatedBranch: "release-1",
+	}
+
+	if err := recordComposeIntegrationBranch(selection, result); err != nil {
+		t.Fatalf("recordComposeIntegrationBranch() error = %v", err)
+	}
+
+	got, ok, err := weaverintegration.NewBranchStore(repoRoot).Get("release-1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Get() ok = false, want true")
+	}
+	want := weaverintegration.BranchRecord{
+		Base:        "main",
+		Branches:    []string{"feature-a", "feature-b"},
+		Skipped:     []string{"feature-c"},
+		Integration: "staging",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tracked branch = %#v, want %#v", got, want)
+	}
+}
+
+func TestRecordComposeIntegrationBranchTracksUpdatedBranches(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	store := weaverintegration.NewBranchStore(repoRoot)
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	if err := recordComposeIntegrationBranch(branchSelection{}, &composer.ComposeResult{
+		BaseBranch:    "integration",
+		Order:         []string{"feature-a", "feature-b"},
+		UpdatedBranch: "release-1",
+	}); err != nil {
+		t.Fatalf("recordComposeIntegrationBranch(update tracked) error = %v", err)
+	}
+	got, ok, err := store.Get("release-1")
+	if err != nil {
+		t.Fatalf("Get(release-1) error = %v", err)
+	}
+	if !ok || got.Base != "integration" || strings.Join(got.Branches, ",") != "feature-a,feature-b" {
+		t.Fatalf("Get(release-1) = %#v, ok=%v", got, ok)
+	}
+
+	if err := recordComposeIntegrationBranch(branchSelection{}, &composer.ComposeResult{
+		BaseBranch:    "main",
+		Order:         []string{"feature-c"},
+		UpdatedBranch: "release-2",
+	}); err != nil {
+		t.Fatalf("recordComposeIntegrationBranch(update new) error = %v", err)
+	}
+	got, ok, err = store.Get("release-2")
+	if err != nil {
+		t.Fatalf("Get(release-2) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Get(release-2) ok = false, want true")
+	}
+	if got.Base != "main" || strings.Join(got.Branches, ",") != "feature-c" {
+		t.Fatalf("Get(release-2) = %#v, want tracked update branch", got)
+	}
+
+	if err := recordComposeIntegrationBranch(branchSelection{}, &composer.ComposeResult{
+		BaseBranch:    "main",
+		Order:         []string{"feature-a"},
+		CreatedBranch: "dry-run",
+		DryRun:        true,
+	}); err != nil {
+		t.Fatalf("recordComposeIntegrationBranch(dry-run) error = %v", err)
+	}
+	if _, ok, err := store.Get("dry-run"); err != nil {
+		t.Fatalf("Get(dry-run) error = %v", err)
+	} else if ok {
+		t.Fatal("Get(dry-run) ok = true, want false")
+	}
+}
+
+func TestRecordComposeIntegrationBranchErrors(t *testing.T) {
+	repoRoot := t.TempDir()
+	setTestApp(t, repoRoot, &staticRunner{repoRoot: repoRoot})
+
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git", "weaver", "integration-branches.yaml"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(path) error = %v", err)
+	}
+
+	err := recordComposeIntegrationBranch(branchSelection{}, &composer.ComposeResult{
+		BaseBranch:    "main",
+		Order:         []string{"feature-a"},
+		CreatedBranch: "release-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), `track integration branch "release-1"`) {
+		t.Fatalf("recordComposeIntegrationBranch(create) error = %v", err)
+	}
+
+	err = recordComposeIntegrationBranch(branchSelection{}, &composer.ComposeResult{
+		BaseBranch:    "main",
+		Order:         []string{"feature-a"},
+		UpdatedBranch: "release-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), `track integration branch "release-1"`) {
+		t.Fatalf("recordComposeIntegrationBranch(update) error = %v", err)
+	}
+}
+
 func TestFormatSkipped(t *testing.T) {
 	if got := formatSkipped(nil); got != "" {
 		t.Fatalf("formatSkipped(nil) = %q, want empty", got)
@@ -569,6 +808,84 @@ func TestAppendUniqueBranch(t *testing.T) {
 	}
 	if got := appendUniqueBranch([]string{"feature-a"}, "feature-b"); strings.Join(got, ",") != "feature-a,feature-b" {
 		t.Fatalf("appendUniqueBranch new = %#v", got)
+	}
+}
+
+func TestFormatTrackedBranchSlice(t *testing.T) {
+	if got := formatTrackedBranchSlice(nil); got != "(none)" {
+		t.Fatalf("formatTrackedBranchSlice(nil) = %q", got)
+	}
+	if got := formatTrackedBranchSlice([]string{"feature-a", "feature-b"}); got != "feature-a, feature-b" {
+		t.Fatalf("formatTrackedBranchSlice(...) = %q", got)
+	}
+}
+
+func TestWriteTrackedIntegrationBranchList(t *testing.T) {
+	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
+
+	var out bytes.Buffer
+	if err := writeTrackedIntegrationBranchList(&out, term, false, nil); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchList(empty) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "no integration branches") {
+		t.Fatalf("writeTrackedIntegrationBranchList(empty) = %q", got)
+	}
+
+	out.Reset()
+	entries := []trackedIntegrationBranchEntry{{
+		Name:   "release-1",
+		Exists: true,
+		Record: weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a"}, Skipped: []string{"feature-b"}, Integration: "staging"},
+	}}
+	if err := writeTrackedIntegrationBranchList(&out, term, false, entries); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchList(plain) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "release-1: status=present base=main branches=feature-a skipped=feature-b integration=staging") {
+		t.Fatalf("writeTrackedIntegrationBranchList(plain) = %q", got)
+	}
+
+	out.Reset()
+	if err := writeTrackedIntegrationBranchList(&out, term, true, entries); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchList(styled) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "Integration Branches") || !strings.Contains(got, "release-1") {
+		t.Fatalf("writeTrackedIntegrationBranchList(styled) = %q", got)
+	}
+}
+
+func TestWriteTrackedIntegrationBranchDeleteResult(t *testing.T) {
+	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
+
+	var out bytes.Buffer
+	if err := writeTrackedIntegrationBranchDeleteResult(&out, term, false, "release-1", trackedIntegrationBranchDeleteResult{DeletedBranch: true}); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(plain deleted) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "deleted integration branch release-1") {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(plain deleted) = %q", got)
+	}
+
+	out.Reset()
+	if err := writeTrackedIntegrationBranchDeleteResult(&out, term, false, "release-1", trackedIntegrationBranchDeleteResult{}); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(plain missing) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "removed tracked integration branch release-1") {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(plain missing) = %q", got)
+	}
+
+	out.Reset()
+	if err := writeTrackedIntegrationBranchDeleteResult(&out, term, true, "release-1", trackedIntegrationBranchDeleteResult{DeletedBranch: true}); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(styled deleted) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "Integration Branch Deleted") || !strings.Contains(got, "release-1") {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(styled deleted) = %q", got)
+	}
+
+	out.Reset()
+	if err := writeTrackedIntegrationBranchDeleteResult(&out, term, true, "release-1", trackedIntegrationBranchDeleteResult{}); err != nil {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(styled missing) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "already missing locally") {
+		t.Fatalf("writeTrackedIntegrationBranchDeleteResult(styled missing) = %q", got)
 	}
 }
 
@@ -679,6 +996,140 @@ func TestRunComposeWithRecoveryAbort(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "compose failed while merging feature-b") {
 		t.Fatalf("error = %v, want conflict branch", err)
+	}
+}
+
+func TestLoadTrackedIntegrationBranchEntries(t *testing.T) {
+	repoRoot := t.TempDir()
+	store := weaverintegration.NewBranchStore(repoRoot)
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	entries, err := loadTrackedIntegrationBranchEntries(context.Background(), &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"show-ref --verify --quiet refs/heads/release-1": {},
+		},
+	}, store)
+	if err != nil {
+		t.Fatalf("loadTrackedIntegrationBranchEntries() error = %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "release-1" || !entries[0].Exists {
+		t.Fatalf("entries = %#v", entries)
+	}
+
+	emptyEntries, err := loadTrackedIntegrationBranchEntries(context.Background(), &commandRecordingRunner{repoRoot: repoRoot}, weaverintegration.NewBranchStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("loadTrackedIntegrationBranchEntries(empty) error = %v", err)
+	}
+	if len(emptyEntries) != 0 {
+		t.Fatalf("empty entries = %#v, want none", emptyEntries)
+	}
+}
+
+func TestLoadTrackedIntegrationBranchEntriesErrors(t *testing.T) {
+	repoRoot := t.TempDir()
+	store := weaverintegration.NewBranchStore(repoRoot)
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	_, err := loadTrackedIntegrationBranchEntries(context.Background(), &rawCommandRunner{
+		repoRoot: repoRoot,
+		outcomes: map[string]runnerOutcome{
+			"show-ref --verify --quiet refs/heads/release-1": {err: errors.New("boom")},
+		},
+	}, store)
+	if err == nil || !strings.Contains(err.Error(), `check integration branch "release-1"`) {
+		t.Fatalf("loadTrackedIntegrationBranchEntries() error = %v", err)
+	}
+
+	brokenRepoRoot := t.TempDir()
+	brokenStore := weaverintegration.NewBranchStore(brokenRepoRoot)
+	brokenPath := filepath.Join(brokenRepoRoot, ".git", "weaver", "integration-branches.yaml")
+	if err := os.MkdirAll(filepath.Dir(brokenPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(brokenPath, []byte("branches: ["), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	_, err = loadTrackedIntegrationBranchEntries(context.Background(), &commandRecordingRunner{repoRoot: repoRoot}, brokenStore)
+	if err == nil || !strings.Contains(err.Error(), "decode integration branches file") {
+		t.Fatalf("loadTrackedIntegrationBranchEntries(broken store) error = %v", err)
+	}
+}
+
+func TestDeleteTrackedIntegrationBranchAdditionalCases(t *testing.T) {
+	repoRoot := t.TempDir()
+	store := weaverintegration.NewBranchStore(repoRoot)
+
+	if _, err := deleteTrackedIntegrationBranch(context.Background(), &commandRecordingRunner{repoRoot: repoRoot}, store, "missing"); err == nil || !strings.Contains(err.Error(), `integration branch "missing" does not exist`) {
+		t.Fatalf("deleteTrackedIntegrationBranch(missing) error = %v", err)
+	}
+
+	if err := store.Track("release-1", weaverintegration.BranchRecord{
+		Base:     "main",
+		Branches: []string{"feature-a"},
+	}); err != nil {
+		t.Fatalf("Track() error = %v", err)
+	}
+
+	_, err := deleteTrackedIntegrationBranch(context.Background(), &rawCommandRunner{
+		repoRoot: repoRoot,
+		outcomes: map[string]runnerOutcome{
+			"show-ref --verify --quiet refs/heads/release-1": {err: errors.New("boom")},
+		},
+	}, store, "release-1")
+	if err == nil || !strings.Contains(err.Error(), `check integration branch "release-1"`) {
+		t.Fatalf("deleteTrackedIntegrationBranch(show-ref) error = %v", err)
+	}
+
+	_, err = deleteTrackedIntegrationBranch(context.Background(), &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"show-ref --verify --quiet refs/heads/release-1": {},
+		},
+		errs: map[string]error{
+			"branch --show-current": errors.New("boom"),
+		},
+	}, store, "release-1")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("deleteTrackedIntegrationBranch(current branch) error = %v", err)
+	}
+
+	_, err = deleteTrackedIntegrationBranch(context.Background(), &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"show-ref --verify --quiet refs/heads/release-1": {},
+			"branch --show-current":                          {Stdout: "feature-b"},
+		},
+		errs: map[string]error{
+			"branch -D release-1": errors.New("boom"),
+		},
+	}, store, "release-1")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("deleteTrackedIntegrationBranch(delete) error = %v", err)
+	}
+
+	brokenRepoRoot := t.TempDir()
+	brokenStore := weaverintegration.NewBranchStore(brokenRepoRoot)
+	brokenPath := filepath.Join(brokenRepoRoot, ".git", "weaver", "integration-branches.yaml")
+	if err := os.MkdirAll(filepath.Dir(brokenPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.MkdirAll(brokenPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(path) error = %v", err)
+	}
+	_, err = deleteTrackedIntegrationBranch(context.Background(), &commandRecordingRunner{repoRoot: repoRoot}, brokenStore, "release-1")
+	if err == nil || !strings.Contains(err.Error(), "read integration branches file") {
+		t.Fatalf("deleteTrackedIntegrationBranch(store read) error = %v", err)
 	}
 }
 
@@ -944,6 +1395,17 @@ type commandRecordingRunner struct {
 	calls    []string
 }
 
+type runnerOutcome struct {
+	result gitrunner.Result
+	err    error
+}
+
+type rawCommandRunner struct {
+	repoRoot string
+	outcomes map[string]runnerOutcome
+	calls    []string
+}
+
 func (r *commandRecordingRunner) Run(_ context.Context, args ...string) (gitrunner.Result, error) {
 	key := strings.Join(args, " ")
 	r.calls = append(r.calls, key)
@@ -966,6 +1428,19 @@ func (r *commandRecordingRunner) Run(_ context.Context, args ...string) (gitrunn
 }
 
 func (r *commandRecordingRunner) RepoRoot() string {
+	return r.repoRoot
+}
+
+func (r *rawCommandRunner) Run(_ context.Context, args ...string) (gitrunner.Result, error) {
+	key := strings.Join(args, " ")
+	r.calls = append(r.calls, key)
+	if outcome, ok := r.outcomes[key]; ok {
+		return outcome.result, outcome.err
+	}
+	return gitrunner.Result{}, nil
+}
+
+func (r *rawCommandRunner) RepoRoot() string {
 	return r.repoRoot
 }
 

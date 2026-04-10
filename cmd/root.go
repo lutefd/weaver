@@ -163,7 +163,11 @@ func markUsage(err error) error {
 }
 
 func currentBranchName(ctx context.Context) (string, error) {
-	result, err := AppContext().Runner.Run(ctx, "branch", "--show-current")
+	return currentBranchNameForRunner(ctx, AppContext().Runner)
+}
+
+func currentBranchNameForRunner(ctx context.Context, runner gitrunner.Runner) (string, error) {
+	result, err := runner.Run(ctx, "branch", "--show-current")
 	if err != nil {
 		return "", fmt.Errorf("resolve current branch: %w", err)
 	}

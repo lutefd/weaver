@@ -147,6 +147,11 @@ func TestComposeCreateIntegration(t *testing.T) {
 	if integrationBefore != revParse(t, repo, "integration") {
 		t.Fatalf("integration changed during --create compose")
 	}
+
+	listResult := weaver(t, repo, "integration", "branch", "list")
+	if !strings.Contains(listResult.Output, "release-1: status=present base=integration branches=feature-a, feature-b") {
+		t.Fatalf("integration branch list output = %q", listResult.Output)
+	}
 }
 
 func TestComposeUpdateIntegrationRebuildsFromBase(t *testing.T) {
@@ -213,6 +218,34 @@ func TestComposeUpdateIntegrationRebuildsFromBase(t *testing.T) {
 	}
 	if got := strings.TrimSpace(showFileAtRef(t, repo, "integration", "feature-b.txt")); got != "feature-b" {
 		t.Fatalf("integration feature-b.txt = %q, want feature-b", got)
+	}
+
+	listResult := weaver(t, repo, "integration", "branch", "list")
+	if !strings.Contains(listResult.Output, "integration: status=present base=main branches=feature-a, feature-b") {
+		t.Fatalf("integration branch list output = %q", listResult.Output)
+	}
+}
+
+func TestIntegrationBranchDeleteRemovesTrackedBranchAndGitRef(t *testing.T) {
+	repo := setupComposeRepo(t)
+
+	createResult := weaver(t, repo, "compose", "feature-b", "--base", "integration", "--create", "release-1")
+	if !strings.Contains(createResult.Output, "created release-1 from integration with: feature-a -> feature-b") {
+		t.Fatalf("compose output = %q", createResult.Output)
+	}
+
+	deleteResult := weaver(t, repo, "integration", "branch", "delete", "release-1")
+	if !strings.Contains(deleteResult.Output, "deleted integration branch release-1") {
+		t.Fatalf("integration branch delete output = %q", deleteResult.Output)
+	}
+
+	if got := strings.TrimSpace(git(t, repo, "branch", "--list", "release-1")); got != "" {
+		t.Fatalf("release-1 branch still present: %q", got)
+	}
+
+	listResult := weaver(t, repo, "integration", "branch", "list")
+	if !strings.Contains(listResult.Output, "no integration branches") {
+		t.Fatalf("integration branch list output = %q", listResult.Output)
 	}
 }
 

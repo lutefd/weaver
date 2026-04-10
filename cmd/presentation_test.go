@@ -106,6 +106,17 @@ func TestRenderHelpers(t *testing.T) {
 			want: []string{"Integrations", "count", "prox", "a → b"},
 		},
 		{
+			name: "integration branch list",
+			got: renderTrackedIntegrationBranchListStyled(term, []trackedIntegrationBranchEntry{
+				{
+					Name:   "release-1",
+					Exists: true,
+					Record: weaverintegration.BranchRecord{Base: "main", Branches: []string{"a", "b"}, Skipped: []string{"c"}, Integration: "staging"},
+				},
+			}),
+			want: []string{"Integration Branches", "count", "release-1", "[present]", "branches=a, b", "skipped=c", "integration=staging"},
+		},
+		{
 			name: "group list",
 			got: renderGroupListStyled(term, map[string][]string{
 				"sprint": {"a", "b"},
