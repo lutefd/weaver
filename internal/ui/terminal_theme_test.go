@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -64,5 +65,47 @@ func TestThemeHelpers(t *testing.T) {
 	}
 	if !strings.Contains(theme.Card("Title", "Subtitle", "Body"), "Title") {
 		t.Fatal("Card() missing title")
+	}
+}
+
+func TestNewTerminalWithFilesAndThemeBounds(t *testing.T) {
+	t.Parallel()
+
+	file, err := os.CreateTemp(t.TempDir(), "terminal-*")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	t.Cleanup(func() { _ = file.Close() })
+
+	term := NewTerminal(file, file)
+	if term.Styled() {
+		t.Fatal("Styled() = true, want false for non-tty files")
+	}
+	if term.Interactive() {
+		t.Fatal("Interactive() = true, want false for non-tty files")
+	}
+	if term.Width() != defaultWidth {
+		t.Fatalf("Width() = %d, want %d", term.Width(), defaultWidth)
+	}
+
+	small := NewTheme(Terminal{width: 10})
+	if small.width != 56 {
+		t.Fatalf("NewTheme(small).width = %d, want 56", small.width)
+	}
+	large := NewTheme(Terminal{width: 200})
+	if large.width != 108 {
+		t.Fatalf("NewTheme(large).width = %d, want 108", large.width)
+	}
+	if got := (Theme{}).ContentWidth(); got != 20 {
+		t.Fatalf("ContentWidth() = %d, want 20", got)
+	}
+	if got := small.Bullet(ToneInfo, "title", ""); !strings.Contains(got, "title") || strings.Contains(got, "fix") {
+		t.Fatalf("Bullet() = %q, want title without fix hint", got)
+	}
+	if got := small.List(nil); got != "" {
+		t.Fatalf("List(nil) = %q, want empty string", got)
+	}
+	if got := small.KeyValues(nil); got != "" {
+		t.Fatalf("KeyValues(nil) = %q, want empty string", got)
 	}
 }

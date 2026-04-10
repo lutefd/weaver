@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lutefd/weaver/internal/stack"
@@ -84,5 +85,48 @@ func TestRenderStatusTree(t *testing.T) {
 	want := "main\n`-- feature-a  clean\n    `-- feature-b  outdated (3 behind)\n        `-- feature-c  conflict risk (2 behind)"
 	if got != want {
 		t.Fatalf("RenderStatusTree() = %q, want %q", got, want)
+	}
+}
+
+func TestRenderChainErrorAndHealthHelpers(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	chain, err := RenderChain(dag, "main", "missing")
+	if err != nil {
+		t.Fatalf("RenderChain() error = %v", err)
+	}
+	if chain != "main -> missing" {
+		t.Fatalf("RenderChain() = %q, want %q", chain, "main -> missing")
+	}
+	if _, err := RenderChain(dag, "main", ""); err == nil {
+		t.Fatal("RenderChain() error = nil, want empty branch error")
+	}
+
+	if got := formatHealth(stack.StackHealth{State: stack.HealthOutdated}); got != "outdated" {
+		t.Fatalf("formatHealth(outdated) = %q, want %q", got, "outdated")
+	}
+	if got := formatHealth(stack.StackHealth{State: stack.HealthConflictRisk}); got != "conflict risk" {
+		t.Fatalf("formatHealth(conflict risk) = %q, want %q", got, "conflict risk")
+	}
+	if got := formatHealth(stack.StackHealth{State: stack.StackHealthState("mystery")}); got != "mystery" {
+		t.Fatalf("formatHealth(mystery) = %q, want %q", got, "mystery")
+	}
+
+	theme := NewTheme(Terminal{width: 80})
+	badges := healthBadges(theme, stack.StackHealth{State: stack.HealthClean, Behind: 4})
+	if strings.Contains(badges, "BEHIND") {
+		t.Fatalf("healthBadges(clean) = %q, want no behind badge", badges)
+	}
+
+	primary := primaryHealthBadge(theme, stack.StackHealthState("mystery"))
+	if !strings.Contains(primary, "MYSTERY") {
+		t.Fatalf("primaryHealthBadge() = %q, want mystery badge", primary)
 	}
 }

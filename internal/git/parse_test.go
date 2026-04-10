@@ -16,6 +16,20 @@ func TestParseBranches(t *testing.T) {
 	}
 }
 
+func TestParseBranchesEmptyAndBlankLines(t *testing.T) {
+	t.Parallel()
+
+	if got := ParseBranches(""); got != nil {
+		t.Fatalf("ParseBranches(\"\") = %#v, want nil", got)
+	}
+
+	output := "* main\n\n  feature-a\n  *\n"
+	want := []string{"main", "feature-a", "*"}
+	if got := ParseBranches(output); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ParseBranches() = %#v, want %#v", got, want)
+	}
+}
+
 func TestParseCurrentBranch(t *testing.T) {
 	t.Parallel()
 

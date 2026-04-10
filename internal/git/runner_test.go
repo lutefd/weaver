@@ -26,6 +26,14 @@ func TestDiscoverRepoRoot(t *testing.T) {
 	}
 }
 
+func TestDiscoverRepoRootError(t *testing.T) {
+	t.Parallel()
+
+	if _, err := DiscoverRepoRoot(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("DiscoverRepoRoot() error = nil, want non-repo error")
+	}
+}
+
 func TestCLIRunnerRun(t *testing.T) {
 	t.Parallel()
 
@@ -85,8 +93,11 @@ func TestIsMutating(t *testing.T) {
 	}{
 		{args: nil, want: false},
 		{args: []string{"checkout", "main"}, want: true},
+		{args: []string{"switch", "main"}, want: true},
 		{args: []string{"branch", "-f", "topic", "HEAD"}, want: true},
+		{args: []string{"branch", "--force", "topic", "HEAD"}, want: true},
 		{args: []string{"branch", "--show-current"}, want: false},
+		{args: []string{"status"}, want: false},
 	}
 	for _, tc := range cases {
 		if got := isMutating(tc.args); got != tc.want {
