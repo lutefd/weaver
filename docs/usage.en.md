@@ -32,6 +32,7 @@ This creates:
 - Use `weaver sync` when you want to bring a stack back into dependency order by applying each parent into its child.
 - Use `weaver compose` when you want to preview or materialize the combined result of several branches on top of a base without changing the source branches.
 - Use `weaver integration ...` when a compose recipe should be saved, named, reused, and shared across clones.
+- Use `weaver integration branch ...` when you need visibility into integration branches previously materialized or refreshed by `weaver compose --create` or `weaver compose --update`.
 
 The important distinction is:
 
@@ -237,6 +238,15 @@ weaver compose feature-b feature-d --base main --update integration
 ```
 
 The `--create` form creates `integration` from the composed commit and then restores your original branch.
+
+Weaver also tracks branches targeted by `--create` and `--update` in local metadata so you can list and delete them later:
+
+```bash
+weaver integration branch list
+weaver integration branch delete integration
+```
+
+On an interactive terminal, `weaver integration branch list` opens a keyboard-driven browser. Use `up`/`down` to move, `d` to delete the selected branch, `r` to refresh, and `q` to quit.
 
 The `--update` form starts from `main`, composes the requested branches, force-moves `integration` to that fresh result, and then restores your original branch.
 

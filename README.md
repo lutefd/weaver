@@ -37,6 +37,8 @@ weaver integration show <name>
 weaver integration doctor <name> [--json]
 weaver integration list
 weaver integration remove <name>
+weaver integration branch list
+weaver integration branch delete <name>
 weaver integration export <name> [--json]
 weaver integration import <file>
 weaver group create <name> <branch...>
@@ -109,6 +111,8 @@ weaver integration save integration --base main feature-a feature-b feature-c
 weaver integration doctor integration
 weaver compose --integration integration --create integration-preview --skip feature-c
 weaver compose --integration integration --update integration
+weaver integration branch list
+weaver integration branch delete integration-preview
 ```
 
 ## Choosing a Command
@@ -119,6 +123,8 @@ weaver compose --integration integration --update integration
 - Use `weaver sync` to bring a stack back into dependency order by applying each parent into its child.
 - Use `weaver compose` to test or materialize the combined result of several branches on top of a base branch without modifying the source branches themselves.
 - Use `weaver integration ...` when the same compose recipe should be reusable and shared by name.
+- Use `weaver integration branch ...` when you want to inspect or clean up materialized branches previously created or refreshed with `weaver compose --create` or `weaver compose --update`.
+  On an interactive terminal, `weaver integration branch list` opens a Bubble Tea browser with keyboard shortcuts for navigation, refresh, and delete.
 
 ## Choosing Rebase or Merge
 
@@ -157,6 +163,7 @@ None of the `.git/weaver/` files are intended to be committed.
 - If you do not pass `--skip`, compose will prompt you to skip the failing branch or abort.
 - If a very divergent branch keeps breaking a large compose, remove it from that compose or integration first, repair it, and then merge it manually onto the branch produced by `weaver compose --create <branch>` or `--update <branch>` before adding it back once it is stable again.
 - `weaver compose --create <branch>` creates a new integration branch from the composed result.
+- Weaver tracks branches targeted by both `weaver compose --create <branch>` and `weaver compose --update <branch>` locally so you can list and delete them later with `weaver integration branch list` and `weaver integration branch delete <branch>`.
 - `weaver compose --update <branch>` rebuilds an existing integration branch from the clean base and force-moves it to the new composed result.
 
 ## Docs

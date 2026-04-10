@@ -59,6 +59,7 @@ If no `--skip` is provided and a branch conflicts, Weaver prompts for `skip` or 
 If one branch keeps breaking a large compose, prefer `--skip` first: let the compose finish, then merge that branch manually onto the branch produced by `--create` or `--update`.
 If the same branch is repeatedly the outlier across runs, it can be better to pass `--skip <branch>` up front instead of waiting for the conflict prompt.
 Only remove the branch from the compose or saved integration entirely when skip-and-manual-merge is no longer a practical short-term workflow.
+Weaver tracks branches targeted by both `--create` and `--update`, so `weaver integration branch list` and `weaver integration branch delete <name>` work for either path.
 
 ## Integrations
 
@@ -69,9 +70,13 @@ weaver integration doctor integration
 weaver integration doctor integration --json
 weaver integration list
 weaver integration remove integration
+weaver integration branch list
+weaver integration branch delete integration-preview
 weaver integration export integration --json > integration.json
 weaver integration import integration.json
 ```
+
+On an interactive terminal, `weaver integration branch list` opens a Bubble Tea browser. Use `up`/`down` to move, `d` to delete, `r` to refresh, and `q` to quit.
 
 ## Groups
 

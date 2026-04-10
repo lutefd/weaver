@@ -238,6 +238,15 @@ weaver compose feature-b feature-d --base main --update integration
 
 Com `--create`, o Weaver cria `integration` a partir do commit composto e depois volta para a branch original.
 
+O Weaver também rastreia localmente as branches alvo de `--create` e `--update`, para que você possa listá-las e removê-las depois:
+
+```bash
+weaver integration branch list
+weaver integration branch delete integration
+```
+
+Em um terminal interativo, `weaver integration branch list` abre um navegador em Bubble Tea. Use `up`/`down` para mover, `d` para remover a branch selecionada, `r` para atualizar e `q` para sair.
+
 Com `--update`, o Weaver parte de `main`, recompõe as branches pedidas, move `integration` à força para esse resultado novo e depois volta para a branch original.
 
 Se a composição encontrar conflito, o Weaver informa qual branch falhou e quais arquivos entraram em conflito.

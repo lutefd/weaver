@@ -69,6 +69,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - If one branch is far more divergent than the rest and keeps breaking a large compose, prefer removing it from the compose or saved integration, repairing it first, and then merging it manually onto the branch created or updated by Weaver before adding it back.
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
 - If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.
+- Weaver tracks branches targeted by both `--create` and `--update`, so use `weaver integration branch list` to inspect them and `weaver integration branch delete <name>` to clean them up later.
 
 ### Manage integration strategies
 
