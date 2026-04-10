@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -50,5 +51,18 @@ func TestDecodeExport(t *testing.T) {
 	}
 	if !state.ExportedAt.Equal(time.Date(2026, 4, 7, 14, 30, 0, 0, time.UTC)) {
 		t.Fatalf("ExportedAt = %v, want fixed time", state.ExportedAt)
+	}
+}
+
+func TestNewExportAndDecodeExportErrors(t *testing.T) {
+	t.Parallel()
+
+	if _, err := NewExport("", Recipe{}); err == nil || err.Error() != "integration name is required" {
+		t.Fatalf("NewExport() error = %v, want validation error", err)
+	}
+
+	_, err := DecodeExport(bytes.NewBufferString("{"))
+	if err == nil || !strings.Contains(err.Error(), "decode integration export:") {
+		t.Fatalf("DecodeExport() error = %v, want wrapped decode error", err)
 	}
 }

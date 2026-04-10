@@ -118,3 +118,31 @@ func TestLocalSourceLoadDecodeError(t *testing.T) {
 		t.Fatalf("Load() error = %v, want decode deps file", err)
 	}
 }
+
+func TestLocalSourceMapAndParseErrors(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	source := NewLocalSource(repoRoot)
+	if err := os.MkdirAll(filepath.Dir(source.path()), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(source.path(), []byte("version: 1\ndependencies:\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	values, err := source.Map(context.Background())
+	if err != nil {
+		t.Fatalf("Map() error = %v", err)
+	}
+	if len(values) != 0 {
+		t.Fatalf("Map() = %#v, want empty map", values)
+	}
+
+	if err := source.Replace(nil); err != nil {
+		t.Fatalf("Replace(nil) error = %v", err)
+	}
+	if err := source.Remove(context.Background(), "missing"); err != nil {
+		t.Fatalf("Remove(missing) error = %v", err)
+	}
+}

@@ -2,7 +2,10 @@ package portability
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,5 +109,53 @@ func TestDecode(t *testing.T) {
 	}
 	if !state.ExportedAt.Equal(time.Date(2026, 4, 7, 14, 30, 0, 0, time.UTC)) {
 		t.Fatalf("ExportedAt = %v, want fixed time", state.ExportedAt)
+	}
+}
+
+func TestImportRejectsNilAndInvalidState(t *testing.T) {
+	t.Parallel()
+
+	manager := New(t.TempDir())
+	if err := manager.Import(nil); err == nil || err.Error() != "import state is required" {
+		t.Fatalf("Import(nil) error = %v, want required state error", err)
+	}
+
+	err := manager.Import(&State{
+		Dependencies: map[string]string{
+			"feature-a": "feature-b",
+			"feature-b": "feature-a",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "dependency cycle detected") {
+		t.Fatalf("Import(cycle) error = %v, want cycle error", err)
+	}
+}
+
+func TestDecodeInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	_, err := Decode(bytes.NewBufferString("{"))
+	if err == nil || !strings.Contains(err.Error(), "decode export:") {
+		t.Fatalf("Decode() error = %v, want wrapped decode error", err)
+	}
+}
+
+func TestLoadFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"version":1,"dependencies":{"feature-b":"feature-a"}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	state, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if state.Version != 1 {
+		t.Fatalf("Version = %d, want 1", state.Version)
+	}
+	if !reflect.DeepEqual(state.Dependencies, map[string]string{"feature-b": "feature-a"}) {
+		t.Fatalf("Dependencies = %#v", state.Dependencies)
 	}
 }

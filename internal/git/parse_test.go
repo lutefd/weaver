@@ -2,6 +2,7 @@ package git
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,19 @@ func TestParseAheadBehind(t *testing.T) {
 	}
 	if ahead != 3 || behind != 7 {
 		t.Fatalf("ParseAheadBehind() = %d, %d, want 3, 7", ahead, behind)
+	}
+}
+
+func TestParseAheadBehindErrors(t *testing.T) {
+	t.Parallel()
+
+	if _, _, err := ParseAheadBehind("3"); err == nil || !strings.Contains(err.Error(), "unexpected ahead/behind output") {
+		t.Fatalf("ParseAheadBehind() error = %v, want unexpected output error", err)
+	}
+	if _, _, err := ParseAheadBehind("x 7"); err == nil || !strings.Contains(err.Error(), `parse ahead count "x"`) {
+		t.Fatalf("ParseAheadBehind() error = %v, want ahead parse error", err)
+	}
+	if _, _, err := ParseAheadBehind("3 y"); err == nil || !strings.Contains(err.Error(), `parse behind count "y"`) {
+		t.Fatalf("ParseAheadBehind() error = %v, want behind parse error", err)
 	}
 }

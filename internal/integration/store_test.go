@@ -1,8 +1,10 @@
 package integration
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -123,5 +125,42 @@ func TestValidateRecipe(t *testing.T) {
 				t.Fatalf("validateRecipe() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestStoreValidationAndDecodeErrors(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore(t.TempDir())
+	if err := store.Save("integration", Recipe{Base: "main", Branches: []string{"feature-a"}}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if err := store.Remove("missing"); err == nil || !strings.Contains(err.Error(), `integration "missing" does not exist`) {
+		t.Fatalf("Remove() error = %v, want missing integration error", err)
+	}
+	if err := store.Replace(map[string]Recipe{"broken": {}}); err == nil || !strings.Contains(err.Error(), `integration "broken" base is required`) {
+		t.Fatalf("Replace() error = %v, want validation error", err)
+	}
+
+	broken := NewStore(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(broken.path()), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(broken.path(), []byte("integrations: ["), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := broken.List(); err == nil || !strings.Contains(err.Error(), "decode integrations file") {
+		t.Fatalf("List() error = %v, want decode integrations file", err)
+	}
+
+	invalid := NewStore(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(invalid.path()), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(invalid.path(), []byte("version: 1\nintegrations:\n  broken:\n    base: main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := invalid.List(); err == nil || !strings.Contains(err.Error(), `invalid integration "broken"`) {
+		t.Fatalf("List() error = %v, want invalid integration error", err)
 	}
 }
