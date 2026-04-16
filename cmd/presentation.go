@@ -147,19 +147,17 @@ func renderSyncResultStyled(term ui.Terminal, mode, branch string, completed []s
 }
 
 func renderUpdateResultStyled(term ui.Terminal, result *updater.UpdateResult) string {
-	details := []ui.KeyValue{
-		{Label: "starting", Value: result.OriginalBranch},
-	}
+	details := make([]ui.KeyValue, 0, 2)
 	if len(result.Updated) > 0 {
-		details = append(details, ui.KeyValue{Label: "updated", Value: strings.Join(result.Updated, ", ")})
+		details = append(details, ui.KeyValue{Label: "fast-forwarded", Value: strings.Join(result.Updated, ", ")})
 	}
 	if len(result.UpToDate) > 0 {
-		details = append(details, ui.KeyValue{Label: "current", Value: strings.Join(result.UpToDate, ", ")})
+		details = append(details, ui.KeyValue{Label: "already current", Value: strings.Join(result.UpToDate, ", ")})
 	}
-	if len(details) == 1 {
+	if len(details) == 0 {
 		details = append(details, ui.KeyValue{Label: "status", Value: "no branches changed"})
 	}
-	return renderActionCard(term, ui.ToneSuccess, "Update Complete", "Upstream fast-forward status", details, nil)
+	return renderActionCard(term, ui.ToneSuccess, "Update Complete", "Upstream fast-forward summary", details, nil)
 }
 
 func renderIntegrationRecipeStyled(term ui.Terminal, name string, recipe weaverintegration.Recipe) string {

@@ -88,7 +88,7 @@ func TestRenderHelpers(t *testing.T) {
 				Updated:        []string{"a"},
 				UpToDate:       []string{"b"},
 			}),
-			want: []string{"Update Complete", "topic", "a", "b"},
+			want: []string{"Update Complete", "fast-forwarded", "a", "already current", "b"},
 		},
 		{
 			name: "integration recipe",
@@ -180,10 +180,13 @@ func TestRenderUpdateResultStyledNoChanges(t *testing.T) {
 
 	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
 	got := renderUpdateResultStyled(term, &updater.UpdateResult{OriginalBranch: "topic"})
-	for _, want := range []string{"Update Complete", "topic", "no branches changed"} {
+	for _, want := range []string{"Update Complete", "no branches changed"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("renderUpdateResultStyled() missing %q in %q", want, got)
 		}
+	}
+	if strings.Contains(got, "topic") {
+		t.Fatalf("renderUpdateResultStyled() unexpectedly included original branch: %q", got)
 	}
 }
 
