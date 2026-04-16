@@ -42,7 +42,8 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - Use `weaver stack <branch> --on <parent>` to declare dependencies.
 - Use `weaver unstack <branch>` to remove a declaration.
 - Use `weaver deps [branch]` to inspect chains or the full tree.
-- Use `weaver status` when health labels matter.
+- Use `weaver status` when stack-parent health labels matter. This view is local-only and compares each branch to its declared parent or base, not to its Git upstream.
+- Use `weaver status --upstream` when the user wants upstream drift instead. This mode fetches remote refs and compares each tracked branch to its configured upstream without fast-forwarding local branches.
 - Use `weaver doctor` when the user wants a read-only diagnostic pass.
 
 ### Rebase a stack
@@ -70,6 +71,10 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 - If the user needs a fresh integration branch created from the composed result, use `weaver compose ... --base <branch> --create <integration-branch>`.
 - If the user needs an existing integration branch rebuilt from a clean base, use `weaver compose ... --base <branch> --update <integration-branch>`.
 - Weaver tracks branches targeted by both `--create` and `--update`, so use `weaver integration branch list` to inspect them and `weaver integration branch delete <name>` to clean them up later.
+- `weaver integration branch list` distinguishes:
+  composed branches included during compose,
+  branches merged later after being skipped,
+  and skipped branches still pending manual follow-up.
 
 ### Manage integration strategies
 
@@ -81,7 +86,7 @@ Use raw `git` only for supporting inspection, such as checking branch names, sho
 
 ### Handoff state
 
-- Use `weaver export` to serialize dependencies, groups, and saved integrations.
+- Use `weaver export` to serialize dependencies, groups, saved integrations, and tracked integration branches.
 - Use `weaver import <file>` to restore them in another clone.
 
 ## Guardrails

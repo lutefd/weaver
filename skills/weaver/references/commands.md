@@ -20,7 +20,11 @@ weaver unstack feature-c
 weaver deps
 weaver deps feature-c
 weaver status
+weaver status --upstream
 ```
+
+`weaver status` compares each branch with its declared stack parent or base.
+`weaver status --upstream` fetches remote refs and compares each tracked branch with its configured upstream without fast-forwarding local branches.
 
 ## Rebase
 
@@ -60,6 +64,7 @@ If one branch keeps breaking a large compose, prefer `--skip` first: let the com
 If the same branch is repeatedly the outlier across runs, it can be better to pass `--skip <branch>` up front instead of waiting for the conflict prompt.
 Only remove the branch from the compose or saved integration entirely when skip-and-manual-merge is no longer a practical short-term workflow.
 Weaver tracks branches targeted by both `--create` and `--update`, so `weaver integration branch list` and `weaver integration branch delete <name>` work for either path.
+`weaver integration branch list` reports which branches were composed originally, which skipped branches were merged later, and which skipped branches are still pending.
 
 ## Integrations
 
@@ -94,3 +99,5 @@ weaver group list
 weaver export > weaver-state.json
 weaver import weaver-state.json
 ```
+
+Portable state includes dependencies, groups, saved integrations, and tracked integration branches.
