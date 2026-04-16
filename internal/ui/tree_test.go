@@ -82,7 +82,7 @@ func TestRenderStatusTree(t *testing.T) {
 		"feature-c": {State: stack.HealthConflictRisk, Behind: 2},
 	})
 
-	want := "main\n`-- feature-a  clean\n    `-- feature-b  outdated (3 behind)\n        `-- feature-c  conflict risk (2 behind)"
+	want := "main\n`-- feature-a  clean\n    `-- feature-b  needs sync (3 behind parent)\n        `-- feature-c  conflict risk (2 behind parent)"
 	if got != want {
 		t.Fatalf("RenderStatusTree() = %q, want %q", got, want)
 	}
@@ -109,11 +109,17 @@ func TestRenderChainErrorAndHealthHelpers(t *testing.T) {
 		t.Fatal("RenderChain() error = nil, want empty branch error")
 	}
 
-	if got := formatHealth(stack.StackHealth{State: stack.HealthOutdated}); got != "outdated" {
-		t.Fatalf("formatHealth(outdated) = %q, want %q", got, "outdated")
+	if got := formatHealth(stack.StackHealth{State: stack.HealthOutdated}); got != "needs sync" {
+		t.Fatalf("formatHealth(outdated) = %q, want %q", got, "needs sync")
+	}
+	if got := formatHealth(stack.StackHealth{State: stack.HealthOutdated, Behind: 3}); got != "needs sync (3 behind parent)" {
+		t.Fatalf("formatHealth(outdated behind) = %q, want %q", got, "needs sync (3 behind parent)")
 	}
 	if got := formatHealth(stack.StackHealth{State: stack.HealthConflictRisk}); got != "conflict risk" {
 		t.Fatalf("formatHealth(conflict risk) = %q, want %q", got, "conflict risk")
+	}
+	if got := formatHealth(stack.StackHealth{State: stack.HealthConflictRisk, Behind: 2}); got != "conflict risk (2 behind parent)" {
+		t.Fatalf("formatHealth(conflict risk behind) = %q, want %q", got, "conflict risk (2 behind parent)")
 	}
 	if got := formatHealth(stack.StackHealth{State: stack.StackHealthState("mystery")}); got != "mystery" {
 		t.Fatalf("formatHealth(mystery) = %q, want %q", got, "mystery")
@@ -124,9 +130,19 @@ func TestRenderChainErrorAndHealthHelpers(t *testing.T) {
 	if strings.Contains(badges, "BEHIND") {
 		t.Fatalf("healthBadges(clean) = %q, want no behind badge", badges)
 	}
+	badges = healthBadges(theme, stack.StackHealth{State: stack.HealthOutdated, Behind: 4})
+	for _, want := range []string{"NEEDS SYNC", "4 BEHIND PARENT"} {
+		if !strings.Contains(badges, want) {
+			t.Fatalf("healthBadges(outdated) missing %q in %q", want, badges)
+		}
+	}
 
 	primary := primaryHealthBadge(theme, stack.StackHealthState("mystery"))
 	if !strings.Contains(primary, "MYSTERY") {
 		t.Fatalf("primaryHealthBadge() = %q, want mystery badge", primary)
+	}
+	primary = primaryHealthBadge(theme, stack.HealthOutdated)
+	if !strings.Contains(primary, "NEEDS SYNC") {
+		t.Fatalf("primaryHealthBadge(outdated) = %q, want needs sync badge", primary)
 	}
 }

@@ -47,7 +47,7 @@ var statusCmd = &cobra.Command{
 
 		term := terminalFor(cmd)
 		if term.Styled() {
-			writeLine(cmd.OutOrStdout(), renderTreeCard(term, "Stack Status", "Dependency tree with health badges", ui.RenderStyledStatusTree(term, payload.dag, base, payload.health)))
+			writeLine(cmd.OutOrStdout(), renderTreeCard(term, "Stack Status", "Dependency tree with health badges relative to each stack parent", ui.RenderStyledStatusTree(term, payload.dag, base, payload.health)))
 			return nil
 		}
 

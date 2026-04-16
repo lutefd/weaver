@@ -24,7 +24,7 @@ func TestRenderStyledStatusTreeIncludesBadges(t *testing.T) {
 		"feature-c": {State: stack.HealthConflictRisk, Behind: 2},
 	})
 
-	for _, needle := range []string{"main", "feature-a", "feature-b", "feature-c", "CLEAN", "OUTDATED", "3 BEHIND", "CONFLICT RISK", "2 BEHIND"} {
+	for _, needle := range []string{"main", "feature-a", "feature-b", "feature-c", "CLEAN", "NEEDS SYNC", "3 BEHIND PARENT", "CONFLICT RISK", "2 BEHIND PARENT"} {
 		if !strings.Contains(got, needle) {
 			t.Fatalf("RenderStyledStatusTree() missing %q in %q", needle, got)
 		}

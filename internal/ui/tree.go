@@ -163,12 +163,12 @@ func formatHealth(status stack.StackHealth) string {
 		return string(status.State)
 	case stack.HealthOutdated:
 		if status.Behind > 0 {
-			return fmt.Sprintf("%s (%d behind)", status.State, status.Behind)
+			return fmt.Sprintf("needs sync (%d behind parent)", status.Behind)
 		}
-		return string(status.State)
+		return "needs sync"
 	case stack.HealthConflictRisk:
 		if status.Behind > 0 {
-			return fmt.Sprintf("%s (%d behind)", status.State, status.Behind)
+			return fmt.Sprintf("%s (%d behind parent)", status.State, status.Behind)
 		}
 		return string(status.State)
 	default:
@@ -179,7 +179,7 @@ func formatHealth(status stack.StackHealth) string {
 func healthBadges(theme Theme, status stack.StackHealth) string {
 	parts := []string{primaryHealthBadge(theme, status.State)}
 	if status.Behind > 0 && status.State != stack.HealthClean {
-		parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d behind", status.Behind)))
+		parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d behind parent", status.Behind)))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
 }
@@ -189,7 +189,7 @@ func primaryHealthBadge(theme Theme, state stack.StackHealthState) string {
 	case stack.HealthClean:
 		return theme.Badge(ToneSuccess, string(state))
 	case stack.HealthOutdated:
-		return theme.Badge(ToneWarn, string(state))
+		return theme.Badge(ToneWarn, "needs sync")
 	case stack.HealthConflictRisk:
 		return theme.Badge(ToneDanger, string(state))
 	default:
