@@ -37,6 +37,16 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Replace integrations error = %v", err)
 	}
+	if err := weaverintegration.NewBranchStore(repoRoot).Replace(map[string]weaverintegration.BranchRecord{
+		"release-1": {
+			Base:        "main",
+			Branches:    []string{"feature-a"},
+			Skipped:     []string{"feature-b"},
+			Integration: "integration",
+		},
+	}); err != nil {
+		t.Fatalf("Replace integration branches error = %v", err)
+	}
 
 	manager := New(repoRoot)
 	state, err := manager.Export()
@@ -94,6 +104,22 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotIntegrations, wantIntegrations) {
 		t.Fatalf("integrations = %#v, want %#v", gotIntegrations, wantIntegrations)
+	}
+
+	gotIntegrationBranches, err := weaverintegration.NewBranchStore(otherRepo).List()
+	if err != nil {
+		t.Fatalf("List() integration branches error = %v", err)
+	}
+	wantIntegrationBranches := map[string]weaverintegration.BranchRecord{
+		"release-1": {
+			Base:        "main",
+			Branches:    []string{"feature-a"},
+			Skipped:     []string{"feature-b"},
+			Integration: "integration",
+		},
+	}
+	if !reflect.DeepEqual(gotIntegrationBranches, wantIntegrationBranches) {
+		t.Fatalf("integration branches = %#v, want %#v", gotIntegrationBranches, wantIntegrationBranches)
 	}
 }
 
@@ -183,6 +209,16 @@ func TestExportImportAndLoadFileErrors(t *testing.T) {
 		t.Fatalf("Import() error = %v, want integration validation error", err)
 	}
 
+	err = manager.Import(&State{
+		Dependencies: map[string]string{"feature-b": "feature-a"},
+		IntegrationBranches: map[string]weaverintegration.BranchRecord{
+			"release-1": {},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), `integration branch "release-1" base is required`) {
+		t.Fatalf("Import() integration branches error = %v, want integration branch validation error", err)
+	}
+
 	if _, err := LoadFile(filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Fatal("LoadFile() error = nil, want open error")
 	}
@@ -205,5 +241,13 @@ func TestExportErrorPropagation(t *testing.T) {
 	}
 	if _, err := New(repoRoot).Export(); err == nil || !strings.Contains(err.Error(), "read integrations file") {
 		t.Fatalf("Export() error = %v, want read integrations file error", err)
+	}
+
+	repoRoot = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git", "weaver", "integration-branches.yaml"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(integration branch path) error = %v", err)
+	}
+	if _, err := New(repoRoot).Export(); err == nil || !strings.Contains(err.Error(), "read integration branches file") {
+		t.Fatalf("Export() error = %v, want read integration branches file error", err)
 	}
 }

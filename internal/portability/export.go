@@ -14,11 +14,12 @@ import (
 )
 
 type State struct {
-	Version      int                                 `json:"version"`
-	ExportedAt   time.Time                           `json:"exported_at"`
-	Dependencies map[string]string                   `json:"dependencies"`
-	Groups       map[string][]string                 `json:"groups,omitempty"`
-	Integrations map[string]weaverintegration.Recipe `json:"integrations,omitempty"`
+	Version             int                                       `json:"version"`
+	ExportedAt          time.Time                                 `json:"exported_at"`
+	Dependencies        map[string]string                         `json:"dependencies"`
+	Groups              map[string][]string                       `json:"groups,omitempty"`
+	Integrations        map[string]weaverintegration.Recipe       `json:"integrations,omitempty"`
+	IntegrationBranches map[string]weaverintegration.BranchRecord `json:"integration_branches,omitempty"`
 }
 
 type Manager struct {
@@ -33,6 +34,7 @@ func (m *Manager) Export() (*State, error) {
 	dependencySource := deps.NewLocalSource(m.repoRoot)
 	groupStore := group.NewStore(m.repoRoot)
 	integrationStore := weaverintegration.NewStore(m.repoRoot)
+	integrationBranchStore := weaverintegration.NewBranchStore(m.repoRoot)
 
 	dependencies, err := dependencySource.Map(nil)
 	if err != nil {
@@ -46,13 +48,18 @@ func (m *Manager) Export() (*State, error) {
 	if err != nil {
 		return nil, err
 	}
+	integrationBranches, err := integrationBranchStore.List()
+	if err != nil {
+		return nil, err
+	}
 
 	return &State{
-		Version:      1,
-		ExportedAt:   time.Now().UTC(),
-		Dependencies: dependencies,
-		Groups:       groups,
-		Integrations: integrations,
+		Version:             1,
+		ExportedAt:          time.Now().UTC(),
+		Dependencies:        dependencies,
+		Groups:              groups,
+		Integrations:        integrations,
+		IntegrationBranches: integrationBranches,
 	}, nil
 }
 
@@ -76,6 +83,9 @@ func (m *Manager) Import(state *State) error {
 		return err
 	}
 	if err := weaverintegration.NewStore(m.repoRoot).Replace(state.Integrations); err != nil {
+		return err
+	}
+	if err := weaverintegration.NewBranchStore(m.repoRoot).Replace(state.IntegrationBranches); err != nil {
 		return err
 	}
 

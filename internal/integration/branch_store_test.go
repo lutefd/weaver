@@ -94,6 +94,46 @@ func TestBranchStoreListNamesAndPath(t *testing.T) {
 	}
 }
 
+func TestBranchStoreReplace(t *testing.T) {
+	t.Parallel()
+
+	store := NewBranchStore(t.TempDir())
+	if err := store.Replace(map[string]BranchRecord{
+		"release-2": {
+			Base:     "main",
+			Branches: []string{"feature-b"},
+		},
+		"release-1": {
+			Base:        "integration",
+			Branches:    []string{"feature-a"},
+			Skipped:     []string{"feature-c"},
+			Integration: "staging",
+		},
+	}); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	got, err := store.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	want := map[string]BranchRecord{
+		"release-1": {
+			Base:        "integration",
+			Branches:    []string{"feature-a"},
+			Skipped:     []string{"feature-c"},
+			Integration: "staging",
+		},
+		"release-2": {
+			Base:     "main",
+			Branches: []string{"feature-b"},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("List() after Replace = %#v, want %#v", got, want)
+	}
+}
+
 func TestValidateBranchRecord(t *testing.T) {
 	t.Parallel()
 
@@ -206,6 +246,10 @@ func TestBranchStoreTrackValidationAndReadErrors(t *testing.T) {
 
 	if _, err := broken.List(); err == nil || !strings.Contains(err.Error(), "read integration branches file") {
 		t.Fatalf("List() error = %v, want read error", err)
+	}
+
+	if err := store.Replace(map[string]BranchRecord{"release": {}}); err == nil || !strings.Contains(err.Error(), `integration branch "release" base is required`) {
+		t.Fatalf("Replace() error = %v, want validation error", err)
 	}
 }
 

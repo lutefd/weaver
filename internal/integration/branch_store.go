@@ -91,6 +91,20 @@ func (s *BranchStore) Names() ([]string, error) {
 	return names, nil
 }
 
+func (s *BranchStore) Replace(branches map[string]BranchRecord) error {
+	data := branchFile{
+		Version:  config.VersionOne,
+		Branches: map[string]BranchRecord{},
+	}
+	for name, record := range branches {
+		if err := validateBranchRecord(name, record); err != nil {
+			return err
+		}
+		data.Branches[name] = normalizeBranchRecord(record)
+	}
+	return s.write(data)
+}
+
 func (s *BranchStore) read() (branchFile, error) {
 	result := branchFile{
 		Version:  config.VersionOne,
