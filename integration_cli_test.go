@@ -149,7 +149,7 @@ func TestComposeCreateIntegration(t *testing.T) {
 	}
 
 	listResult := weaver(t, repo, "integration", "branch", "list")
-	if !strings.Contains(listResult.Output, "release-1: status=present base=integration branches=feature-a, feature-b") {
+	if !strings.Contains(listResult.Output, "release-1: status=complete base=integration composed=feature-a, feature-b") {
 		t.Fatalf("integration branch list output = %q", listResult.Output)
 	}
 }
@@ -221,7 +221,7 @@ func TestComposeUpdateIntegrationRebuildsFromBase(t *testing.T) {
 	}
 
 	listResult := weaver(t, repo, "integration", "branch", "list")
-	if !strings.Contains(listResult.Output, "integration: status=present base=main branches=feature-a, feature-b") {
+	if !strings.Contains(listResult.Output, "integration: status=complete base=main composed=feature-a, feature-b") {
 		t.Fatalf("integration branch list output = %q", listResult.Output)
 	}
 }
@@ -239,7 +239,7 @@ func TestIntegrationBranchListMarksSkippedBranchesAsIntegratedWhenMergedLater(t 
 	git(t, repo, "checkout", "feature-b")
 
 	listResult := weaver(t, repo, "integration", "branch", "list")
-	if !strings.Contains(listResult.Output, "release-1: status=integrated base=integration branches=feature-a integrated=feature-b") {
+	if !strings.Contains(listResult.Output, "release-1: status=complete base=integration composed=feature-a merged_later=feature-b") {
 		t.Fatalf("integration branch list output = %q", listResult.Output)
 	}
 }

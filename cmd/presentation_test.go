@@ -115,7 +115,7 @@ func TestRenderHelpers(t *testing.T) {
 					Record:          weaverintegration.BranchRecord{Base: "main", Branches: []string{"a", "b"}, Skipped: []string{"c"}, Integration: "staging"},
 				},
 			}),
-			want: []string{"Integration Branches", "count", "release-1", "[integrated]", "branches=a, b", "integrated=c", "integration=staging"},
+			want: []string{"Integration Branches", "count", "release-1", "[complete]", "composed=a, b", "merged later=c", "integration=staging"},
 		},
 		{
 			name: "group list",

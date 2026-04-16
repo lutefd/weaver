@@ -49,7 +49,7 @@ func TestTrackedIntegrationBranchBrowserNavigationAndView(t *testing.T) {
 	}
 
 	view := model.View()
-	for _, want := range []string{"Integration Branches", "release-2", "Selected integration branch", "feature-c", "y confirm delete"} {
+	for _, want := range []string{"Integration Branches", "release-2", "Selected integration branch", "composed", "pending", "feature-c", "y confirm delete"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q in %q", want, view)
 		}
@@ -62,6 +62,27 @@ func TestTrackedIntegrationBranchBrowserNavigationAndView(t *testing.T) {
 	}
 	if model.flashMessage != "delete cancelled" {
 		t.Fatalf("flashMessage = %q, want delete cancelled", model.flashMessage)
+	}
+}
+
+func TestTrackedIntegrationBranchBrowserRendersMergedLaterState(t *testing.T) {
+	t.Parallel()
+
+	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
+	model := newTrackedIntegrationBranchBrowserModel(context.Background(), term, &commandRecordingRunner{}, weaverintegration.NewBranchStore(t.TempDir()), []trackedIntegrationBranchEntry{
+		{
+			Name:            "release-1",
+			Exists:          true,
+			IncludedSkipped: []string{"feature-c"},
+			Record:          weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a", "feature-b"}, Skipped: []string{"feature-c"}},
+		},
+	})
+
+	view := model.View()
+	for _, want := range []string{"COMPLETE", "composed", "feature-a, feature-b", "merged later", "feature-c"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("View() missing %q in %q", want, view)
+		}
 	}
 }
 
@@ -82,7 +103,7 @@ func TestTrackedIntegrationBranchBrowserDeleteFlow(t *testing.T) {
 		repoRoot: repoRoot,
 		results: map[string]gitrunner.Result{
 			"show-ref --verify --quiet refs/heads/release-1": {},
-			"branch --show-current":                         {Stdout: "feature-b"},
+			"branch --show-current":                          {Stdout: "feature-b"},
 		},
 	}
 	model := newTrackedIntegrationBranchBrowserModel(context.Background(), term, runner, store, []trackedIntegrationBranchEntry{

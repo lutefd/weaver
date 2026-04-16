@@ -838,7 +838,7 @@ func TestTrackedIntegrationBranchEntryStatus(t *testing.T) {
 				Exists: true,
 				Record: weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a"}},
 			},
-			want: "present",
+			want: "complete",
 		},
 		{
 			name: "pending fallback",
@@ -860,13 +860,13 @@ func TestTrackedIntegrationBranchEntryStatus(t *testing.T) {
 			want: "partial",
 		},
 		{
-			name: "integrated",
+			name: "complete after later merge",
 			entry: trackedIntegrationBranchEntry{
 				Name:            "release-1",
 				Exists:          true,
 				IncludedSkipped: []string{"feature-b"},
 			},
-			want: "integrated",
+			want: "complete",
 		},
 	}
 
@@ -901,7 +901,7 @@ func TestWriteTrackedIntegrationBranchList(t *testing.T) {
 	if err := writeTrackedIntegrationBranchList(&out, term, false, entries); err != nil {
 		t.Fatalf("writeTrackedIntegrationBranchList(plain) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "release-1: status=partial base=main branches=feature-a integrated=feature-b skipped=feature-c integration=staging") {
+	if got := out.String(); !strings.Contains(got, "release-1: status=partial base=main composed=feature-a merged_later=feature-b pending=feature-c integration=staging") {
 		t.Fatalf("writeTrackedIntegrationBranchList(plain) = %q", got)
 	}
 

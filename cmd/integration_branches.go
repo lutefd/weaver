@@ -71,16 +71,13 @@ func (e trackedIntegrationBranchEntry) Status() string {
 		return "missing"
 	}
 	pending := e.pendingSkipped()
-	included := e.includedSkipped()
 	switch {
-	case len(pending) == 0 && len(included) > 0:
-		return "integrated"
-	case len(pending) > 0 && len(included) > 0:
+	case len(pending) > 0 && len(e.includedSkipped()) > 0:
 		return "partial"
 	case len(pending) > 0:
 		return "pending"
 	default:
-		return "present"
+		return "complete"
 	}
 }
 
@@ -167,12 +164,12 @@ func writeTrackedIntegrationBranchList(w io.Writer, term ui.Terminal, styled boo
 	}
 
 	for _, entry := range entries {
-		fmt.Fprintf(w, "%s: status=%s base=%s branches=%s", entry.Name, entry.Status(), entry.Record.Base, formatTrackedBranchSlice(entry.Record.Branches))
+		fmt.Fprintf(w, "%s: status=%s base=%s composed=%s", entry.Name, entry.Status(), entry.Record.Base, formatTrackedBranchSlice(entry.Record.Branches))
 		if included := entry.includedSkipped(); len(included) > 0 {
-			fmt.Fprintf(w, " integrated=%s", strings.Join(included, ", "))
+			fmt.Fprintf(w, " merged_later=%s", strings.Join(included, ", "))
 		}
 		if pending := entry.pendingSkipped(); len(pending) > 0 {
-			fmt.Fprintf(w, " skipped=%s", strings.Join(pending, ", "))
+			fmt.Fprintf(w, " pending=%s", strings.Join(pending, ", "))
 		}
 		if entry.Record.Integration != "" {
 			fmt.Fprintf(w, " integration=%s", entry.Record.Integration)

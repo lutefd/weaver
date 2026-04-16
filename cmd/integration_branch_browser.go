@@ -218,7 +218,7 @@ func (m trackedIntegrationBranchBrowserModel) renderList() string {
 
 		statusTone := ui.ToneWarn
 		switch entry.Status() {
-		case "present", "integrated":
+		case "complete":
 			statusTone = ui.ToneSuccess
 		case "partial":
 			statusTone = ui.ToneInfo
@@ -251,13 +251,13 @@ func (m trackedIntegrationBranchBrowserModel) renderDetails() string {
 		{Label: "branch", Value: entry.Name},
 		{Label: "status", Value: entry.Status()},
 		{Label: "base", Value: entry.Record.Base},
-		{Label: "branches", Value: formatTrackedBranchSlice(entry.Record.Branches)},
+		{Label: "composed", Value: formatTrackedBranchSlice(entry.Record.Branches)},
 	}
 	if included := entry.includedSkipped(); len(included) > 0 {
-		details = append(details, ui.KeyValue{Label: "integrated", Value: strings.Join(included, ", ")})
+		details = append(details, ui.KeyValue{Label: "merged later", Value: strings.Join(included, ", ")})
 	}
 	if pending := entry.pendingSkipped(); len(pending) > 0 {
-		details = append(details, ui.KeyValue{Label: "skipped", Value: strings.Join(pending, ", ")})
+		details = append(details, ui.KeyValue{Label: "pending", Value: strings.Join(pending, ", ")})
 	}
 	if entry.Record.Integration != "" {
 		details = append(details, ui.KeyValue{Label: "integration", Value: entry.Record.Integration})

@@ -191,12 +191,12 @@ func renderIntegrationListStyled(term ui.Terminal, recipes map[string]weaverinte
 func renderTrackedIntegrationBranchListStyled(term ui.Terminal, entries []trackedIntegrationBranchEntry) string {
 	lines := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		line := fmt.Sprintf("%s  [%s]  base=%s  branches=%s", entry.Name, entry.Status(), entry.Record.Base, formatTrackedBranchSlice(entry.Record.Branches))
+		line := fmt.Sprintf("%s  [%s]  base=%s  composed=%s", entry.Name, entry.Status(), entry.Record.Base, formatTrackedBranchSlice(entry.Record.Branches))
 		if included := entry.includedSkipped(); len(included) > 0 {
-			line += "  integrated=" + strings.Join(included, ", ")
+			line += "  merged later=" + strings.Join(included, ", ")
 		}
 		if pending := entry.pendingSkipped(); len(pending) > 0 {
-			line += "  skipped=" + strings.Join(pending, ", ")
+			line += "  pending=" + strings.Join(pending, ", ")
 		}
 		if entry.Record.Integration != "" {
 			line += "  integration=" + entry.Record.Integration
