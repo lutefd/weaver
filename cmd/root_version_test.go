@@ -29,8 +29,6 @@ func TestUsageErrorAndMarkUsage(t *testing.T) {
 }
 
 func TestLoadConfigDefaultsWhenMissing(t *testing.T) {
-	t.Parallel()
-
 	repoRoot := t.TempDir()
 	opts = cliOptions{}
 	t.Cleanup(func() { opts = cliOptions{} })
@@ -45,8 +43,6 @@ func TestLoadConfigDefaultsWhenMissing(t *testing.T) {
 }
 
 func TestLoadConfigFromExplicitPath(t *testing.T) {
-	t.Parallel()
-
 	repoRoot := t.TempDir()
 	cfgPath := filepath.Join(repoRoot, "custom.yaml")
 	if err := os.WriteFile(cfgPath, []byte("version: 1\ndefault_base: develop\n"), 0o644); err != nil {
