@@ -39,6 +39,15 @@ func RenderStatusTree(dag *stack.DAG, base string, health map[string]stack.Stack
 	return strings.Join(lines, "\n")
 }
 
+func RenderUpstreamStatusTree(dag *stack.DAG, base string, health map[string]stack.UpstreamHealth) string {
+	lines := []string{base}
+	roots := rootsExcludingBase(dag, base)
+	for idx, root := range roots {
+		lines = append(lines, renderUpstreamStatusSubtree(dag, root, "", idx == len(roots)-1, health)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func RenderStyledChain(term Terminal, dag *stack.DAG, base, branch string) (string, error) {
 	chain, err := dag.Ancestors(branch)
 	if err != nil {
@@ -82,6 +91,16 @@ func RenderStyledStatusTree(term Terminal, dag *stack.DAG, base string, health m
 	return strings.Join(lines, "\n")
 }
 
+func RenderStyledUpstreamStatusTree(term Terminal, dag *stack.DAG, base string, health map[string]stack.UpstreamHealth) string {
+	theme := NewTheme(term)
+	lines := []string{theme.BaseBranch(base)}
+	roots := rootsExcludingBase(dag, base)
+	for idx, root := range roots {
+		lines = append(lines, renderStyledUpstreamStatusSubtree(theme, dag, root, "", idx == len(roots)-1, health)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func renderSubtree(dag *stack.DAG, branch, prefix string, last bool) []string {
 	connector := "+-- "
 	childPrefix := prefix + "|   "
@@ -115,6 +134,27 @@ func renderStatusSubtree(dag *stack.DAG, branch, prefix string, last bool, healt
 	children := dag.Children(branch)
 	for idx, child := range children {
 		lines = append(lines, renderStatusSubtree(dag, child, childPrefix, idx == len(children)-1, health)...)
+	}
+	return lines
+}
+
+func renderUpstreamStatusSubtree(dag *stack.DAG, branch, prefix string, last bool, health map[string]stack.UpstreamHealth) []string {
+	connector := "+-- "
+	childPrefix := prefix + "|   "
+	if last {
+		connector = "`-- "
+		childPrefix = prefix + "    "
+	}
+
+	line := fmt.Sprintf("%s%s%s", prefix, connector, branch)
+	if status, ok := health[branch]; ok {
+		line = fmt.Sprintf("%s  %s", line, formatUpstreamHealth(status))
+	}
+
+	lines := []string{line}
+	children := dag.Children(branch)
+	for idx, child := range children {
+		lines = append(lines, renderUpstreamStatusSubtree(dag, child, childPrefix, idx == len(children)-1, health)...)
 	}
 	return lines
 }
@@ -157,6 +197,27 @@ func renderStyledStatusSubtree(theme Theme, dag *stack.DAG, branch, prefix strin
 	return lines
 }
 
+func renderStyledUpstreamStatusSubtree(theme Theme, dag *stack.DAG, branch, prefix string, last bool, health map[string]stack.UpstreamHealth) []string {
+	connector := "├─ "
+	childPrefix := prefix + "│  "
+	if last {
+		connector = "└─ "
+		childPrefix = prefix + "   "
+	}
+
+	line := theme.Connector(prefix) + theme.Connector(connector) + theme.Branch(branch)
+	if status, ok := health[branch]; ok {
+		line = lipgloss.JoinHorizontal(lipgloss.Center, line, "  ", upstreamHealthBadges(theme, status))
+	}
+
+	lines := []string{line}
+	children := dag.Children(branch)
+	for idx, child := range children {
+		lines = append(lines, renderStyledUpstreamStatusSubtree(theme, dag, child, childPrefix, idx == len(children)-1, health)...)
+	}
+	return lines
+}
+
 func formatHealth(status stack.StackHealth) string {
 	switch status.State {
 	case stack.HealthClean:
@@ -192,6 +253,79 @@ func primaryHealthBadge(theme Theme, state stack.StackHealthState) string {
 		return theme.Badge(ToneWarn, "needs sync")
 	case stack.HealthConflictRisk:
 		return theme.Badge(ToneDanger, string(state))
+	default:
+		return theme.Badge(ToneMuted, string(state))
+	}
+}
+
+func formatUpstreamHealth(status stack.UpstreamHealth) string {
+	switch status.State {
+	case stack.UpstreamCurrent:
+		return string(status.State)
+	case stack.UpstreamBehind:
+		if status.Behind > 0 {
+			return fmt.Sprintf("%s (%d behind)", status.State, status.Behind)
+		}
+		return string(status.State)
+	case stack.UpstreamAhead:
+		if status.Ahead > 0 {
+			return fmt.Sprintf("%s (%d ahead)", status.State, status.Ahead)
+		}
+		return string(status.State)
+	case stack.UpstreamDiverged:
+		switch {
+		case status.Ahead > 0 && status.Behind > 0:
+			return fmt.Sprintf("%s (%d ahead, %d behind)", status.State, status.Ahead, status.Behind)
+		case status.Ahead > 0:
+			return fmt.Sprintf("%s (%d ahead)", status.State, status.Ahead)
+		case status.Behind > 0:
+			return fmt.Sprintf("%s (%d behind)", status.State, status.Behind)
+		default:
+			return string(status.State)
+		}
+	case stack.UpstreamMissing:
+		return string(status.State)
+	default:
+		return string(status.State)
+	}
+}
+
+func upstreamHealthBadges(theme Theme, status stack.UpstreamHealth) string {
+	parts := []string{primaryUpstreamHealthBadge(theme, status.State)}
+	switch status.State {
+	case stack.UpstreamBehind:
+		if status.Behind > 0 {
+			parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d behind", status.Behind)))
+		}
+	case stack.UpstreamAhead:
+		if status.Ahead > 0 {
+			parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d ahead", status.Ahead)))
+		}
+	case stack.UpstreamDiverged:
+		switch {
+		case status.Ahead > 0 && status.Behind > 0:
+			parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d ahead / %d behind", status.Ahead, status.Behind)))
+		case status.Ahead > 0:
+			parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d ahead", status.Ahead)))
+		case status.Behind > 0:
+			parts = append(parts, theme.Badge(ToneMuted, fmt.Sprintf("%d behind", status.Behind)))
+		}
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
+}
+
+func primaryUpstreamHealthBadge(theme Theme, state stack.UpstreamHealthState) string {
+	switch state {
+	case stack.UpstreamCurrent:
+		return theme.Badge(ToneSuccess, string(state))
+	case stack.UpstreamBehind:
+		return theme.Badge(ToneWarn, string(state))
+	case stack.UpstreamAhead:
+		return theme.Badge(ToneInfo, string(state))
+	case stack.UpstreamDiverged:
+		return theme.Badge(ToneDanger, string(state))
+	case stack.UpstreamMissing:
+		return theme.Badge(ToneMuted, string(state))
 	default:
 		return theme.Badge(ToneMuted, string(state))
 	}

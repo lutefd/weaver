@@ -30,3 +30,31 @@ func TestRenderStyledStatusTreeIncludesBadges(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderStyledUpstreamStatusTreeIncludesBadges(t *testing.T) {
+	t.Parallel()
+
+	dag, err := stack.NewDAG([]stack.Dependency{
+		{Branch: "feature-b", Parent: "feature-a"},
+		{Branch: "feature-c", Parent: "feature-b"},
+		{Branch: "feature-d", Parent: "feature-c"},
+		{Branch: "feature-e", Parent: "feature-d"},
+	})
+	if err != nil {
+		t.Fatalf("NewDAG() error = %v", err)
+	}
+
+	got := RenderStyledUpstreamStatusTree(Terminal{width: 90}, dag, "main", map[string]stack.UpstreamHealth{
+		"feature-a": {State: stack.UpstreamCurrent},
+		"feature-b": {State: stack.UpstreamBehind, Behind: 3},
+		"feature-c": {State: stack.UpstreamAhead, Ahead: 2},
+		"feature-d": {State: stack.UpstreamDiverged, Ahead: 1, Behind: 4},
+		"feature-e": {State: stack.UpstreamMissing},
+	})
+
+	for _, needle := range []string{"main", "feature-a", "feature-b", "feature-c", "feature-d", "feature-e", "UP TO DATE", "BEHIND UPSTREAM", "3 BEHIND", "AHEAD OF UPSTREAM", "2 AHEAD", "DIVERGED", "1 AHEAD / 4 BEHIND", "NO UPSTREAM"} {
+		if !strings.Contains(got, needle) {
+			t.Fatalf("RenderStyledUpstreamStatusTree() missing %q in %q", needle, got)
+		}
+	}
+}

@@ -288,6 +288,96 @@ func TestIntegrationDoctorCommandWarnsOnDriftWithoutFailing(t *testing.T) {
 	}
 }
 
+func TestStatusCommand(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := deps.NewLocalSource(repoRoot).Replace(map[string]string{
+		"feature-b": "feature-a",
+	}); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"merge-base feature-a main":                           {Stdout: "sha-main"},
+			"rev-parse main":                                      {Stdout: "sha-main"},
+			"rev-list --left-right --count feature-a...main":      {Stdout: "0 0"},
+			"merge-base feature-b feature-a":                      {Stdout: "sha-old"},
+			"rev-parse feature-a":                                 {Stdout: "sha-new"},
+			"rev-list --left-right --count feature-b...feature-a": {Stdout: "1 2"},
+			"merge-tree --write-tree --quiet feature-a feature-b": {},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	statusCmd.Flags().Set("upstream", "false")
+	t.Cleanup(func() {
+		statusCmd.Flags().Set("upstream", "false")
+	})
+
+	var out bytes.Buffer
+	statusCmd.SetOut(&out)
+	if err := statusCmd.RunE(statusCmd, nil); err != nil {
+		t.Fatalf("status error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "feature-b  needs sync (2 behind parent)") {
+		t.Fatalf("status output = %q", got)
+	}
+}
+
+func TestStatusCommandUpstream(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := deps.NewLocalSource(repoRoot).Replace(map[string]string{
+		"feature-b": "feature-a",
+	}); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	runner := &commandRecordingRunner{
+		repoRoot: repoRoot,
+		results: map[string]gitrunner.Result{
+			"fetch --all": {},
+			"for-each-ref --format=%(refname:short)%09%(upstream:short) refs/heads/feature-a": {Stdout: "feature-a\torigin/feature-a"},
+			"rev-list --left-right --count feature-a...origin/feature-a":                      {Stdout: "0 3"},
+			"for-each-ref --format=%(refname:short)%09%(upstream:short) refs/heads/feature-b": {Stdout: "feature-b\t"},
+		},
+	}
+	setTestApp(t, repoRoot, runner)
+
+	statusCmd.Flags().Set("upstream", "true")
+	t.Cleanup(func() {
+		statusCmd.Flags().Set("upstream", "false")
+	})
+
+	var out bytes.Buffer
+	statusCmd.SetOut(&out)
+	if err := statusCmd.RunE(statusCmd, nil); err != nil {
+		t.Fatalf("status --upstream error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "feature-a  behind upstream (3 behind)") || !strings.Contains(got, "feature-b  no upstream") {
+		t.Fatalf("status --upstream output = %q", got)
+	}
+
+	if calls := strings.Join(runner.calls, "\n"); !strings.Contains(calls, "fetch --all") {
+		t.Fatalf("status --upstream calls = %q, want fetch", calls)
+	}
+}
+
+func TestStatusTaskLabels(t *testing.T) {
+	if got := statusTaskTitle(false); got != "Checking Stack Status" {
+		t.Fatalf("statusTaskTitle(false) = %q", got)
+	}
+	if got := statusTaskTitle(true); got != "Checking Upstream Status" {
+		t.Fatalf("statusTaskTitle(true) = %q", got)
+	}
+	if got := statusTaskSubtitle(false); got != "Calculating branch health and merge risk" {
+		t.Fatalf("statusTaskSubtitle(false) = %q", got)
+	}
+	if got := statusTaskSubtitle(true); got != "Fetching remotes and calculating branch drift against upstream" {
+		t.Fatalf("statusTaskSubtitle(true) = %q", got)
+	}
+}
+
 func TestSyncCommandMergeMode(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &commandRecordingRunner{
