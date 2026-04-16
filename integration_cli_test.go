@@ -226,6 +226,24 @@ func TestComposeUpdateIntegrationRebuildsFromBase(t *testing.T) {
 	}
 }
 
+func TestIntegrationBranchListMarksSkippedBranchesAsIntegratedWhenMergedLater(t *testing.T) {
+	repo := setupComposeRepo(t)
+
+	result := weaver(t, repo, "compose", "feature-b", "--base", "integration", "--create", "release-1", "--skip", "feature-b")
+	if !strings.Contains(result.Output, "created release-1 from integration with: feature-a (skipped: feature-b)") {
+		t.Fatalf("compose output = %q", result.Output)
+	}
+
+	git(t, repo, "checkout", "release-1")
+	git(t, repo, "merge", "--no-ff", "--no-edit", "feature-b")
+	git(t, repo, "checkout", "feature-b")
+
+	listResult := weaver(t, repo, "integration", "branch", "list")
+	if !strings.Contains(listResult.Output, "release-1: status=integrated base=integration branches=feature-a integrated=feature-b") {
+		t.Fatalf("integration branch list output = %q", listResult.Output)
+	}
+}
+
 func TestIntegrationBranchDeleteRemovesTrackedBranchAndGitRef(t *testing.T) {
 	repo := setupComposeRepo(t)
 

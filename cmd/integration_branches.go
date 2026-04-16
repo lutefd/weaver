@@ -59,16 +59,40 @@ var integrationBranchDeleteCmd = &cobra.Command{
 }
 
 type trackedIntegrationBranchEntry struct {
-	Name   string
-	Record weaverintegration.BranchRecord
-	Exists bool
+	Name            string
+	Record          weaverintegration.BranchRecord
+	Exists          bool
+	IncludedSkipped []string
+	PendingSkipped  []string
 }
 
 func (e trackedIntegrationBranchEntry) Status() string {
-	if e.Exists {
+	if !e.Exists {
+		return "missing"
+	}
+	pending := e.pendingSkipped()
+	included := e.includedSkipped()
+	switch {
+	case len(pending) == 0 && len(included) > 0:
+		return "integrated"
+	case len(pending) > 0 && len(included) > 0:
+		return "partial"
+	case len(pending) > 0:
+		return "pending"
+	default:
 		return "present"
 	}
-	return "missing"
+}
+
+func (e trackedIntegrationBranchEntry) pendingSkipped() []string {
+	if len(e.PendingSkipped) == 0 && len(e.IncludedSkipped) == 0 && len(e.Record.Skipped) > 0 {
+		return append([]string(nil), e.Record.Skipped...)
+	}
+	return append([]string(nil), e.PendingSkipped...)
+}
+
+func (e trackedIntegrationBranchEntry) includedSkipped() []string {
+	return append([]string(nil), e.IncludedSkipped...)
 }
 
 type trackedIntegrationBranchDeleteResult struct {
@@ -94,14 +118,42 @@ func loadTrackedIntegrationBranchEntries(ctx context.Context, runner gitrunner.R
 		if err != nil {
 			return nil, fmt.Errorf("check integration branch %q: %w", name, err)
 		}
+		includedSkipped, pendingSkipped, err := resolveTrackedIntegrationBranchProgress(ctx, runner, name, record, exists)
+		if err != nil {
+			return nil, err
+		}
 		entries = append(entries, trackedIntegrationBranchEntry{
-			Name:   name,
-			Record: record,
-			Exists: exists,
+			Name:            name,
+			Record:          record,
+			Exists:          exists,
+			IncludedSkipped: includedSkipped,
+			PendingSkipped:  pendingSkipped,
 		})
 	}
 
 	return entries, nil
+}
+
+func resolveTrackedIntegrationBranchProgress(ctx context.Context, runner gitrunner.Runner, integrationBranch string, record weaverintegration.BranchRecord, exists bool) ([]string, []string, error) {
+	pending := append([]string(nil), record.Skipped...)
+	if !exists || len(record.Skipped) == 0 {
+		return nil, pending, nil
+	}
+
+	included := make([]string, 0, len(record.Skipped))
+	pending = make([]string, 0, len(record.Skipped))
+	for _, branch := range record.Skipped {
+		contains, err := integrationBranchContainsBranch(ctx, runner, integrationBranch, branch)
+		if err != nil {
+			return nil, nil, fmt.Errorf("check whether skipped branch %q is integrated into %q: %w", branch, integrationBranch, err)
+		}
+		if contains {
+			included = append(included, branch)
+			continue
+		}
+		pending = append(pending, branch)
+	}
+	return included, pending, nil
 }
 
 func writeTrackedIntegrationBranchList(w io.Writer, term ui.Terminal, styled bool, entries []trackedIntegrationBranchEntry) error {
@@ -116,8 +168,11 @@ func writeTrackedIntegrationBranchList(w io.Writer, term ui.Terminal, styled boo
 
 	for _, entry := range entries {
 		fmt.Fprintf(w, "%s: status=%s base=%s branches=%s", entry.Name, entry.Status(), entry.Record.Base, formatTrackedBranchSlice(entry.Record.Branches))
-		if len(entry.Record.Skipped) > 0 {
-			fmt.Fprintf(w, " skipped=%s", strings.Join(entry.Record.Skipped, ", "))
+		if included := entry.includedSkipped(); len(included) > 0 {
+			fmt.Fprintf(w, " integrated=%s", strings.Join(included, ", "))
+		}
+		if pending := entry.pendingSkipped(); len(pending) > 0 {
+			fmt.Fprintf(w, " skipped=%s", strings.Join(pending, ", "))
 		}
 		if entry.Record.Integration != "" {
 			fmt.Fprintf(w, " integration=%s", entry.Record.Integration)
@@ -185,6 +240,25 @@ func gitBranchExists(ctx context.Context, runner gitrunner.Runner, branch string
 	result, err := runner.Run(ctx, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	if err != nil {
 		if result.ExitCode != 0 {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func integrationBranchContainsBranch(ctx context.Context, runner gitrunner.Runner, integrationBranch, branch string) (bool, error) {
+	exists, err := gitBranchExists(ctx, runner, branch)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+
+	result, err := runner.Run(ctx, "merge-base", "--is-ancestor", branch, integrationBranch)
+	if err != nil {
+		if result.ExitCode == 1 {
 			return false, nil
 		}
 		return false, err

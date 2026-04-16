@@ -217,8 +217,11 @@ func (m trackedIntegrationBranchBrowserModel) renderList() string {
 		}
 
 		statusTone := ui.ToneWarn
-		if entry.Exists {
+		switch entry.Status() {
+		case "present", "integrated":
 			statusTone = ui.ToneSuccess
+		case "partial":
+			statusTone = ui.ToneInfo
 		}
 		line := lipgloss.JoinHorizontal(
 			lipgloss.Center,
@@ -250,8 +253,11 @@ func (m trackedIntegrationBranchBrowserModel) renderDetails() string {
 		{Label: "base", Value: entry.Record.Base},
 		{Label: "branches", Value: formatTrackedBranchSlice(entry.Record.Branches)},
 	}
-	if len(entry.Record.Skipped) > 0 {
-		details = append(details, ui.KeyValue{Label: "skipped", Value: strings.Join(entry.Record.Skipped, ", ")})
+	if included := entry.includedSkipped(); len(included) > 0 {
+		details = append(details, ui.KeyValue{Label: "integrated", Value: strings.Join(included, ", ")})
+	}
+	if pending := entry.pendingSkipped(); len(pending) > 0 {
+		details = append(details, ui.KeyValue{Label: "skipped", Value: strings.Join(pending, ", ")})
 	}
 	if entry.Record.Integration != "" {
 		details = append(details, ui.KeyValue{Label: "integration", Value: entry.Record.Integration})

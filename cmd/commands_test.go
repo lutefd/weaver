@@ -820,6 +820,65 @@ func TestFormatTrackedBranchSlice(t *testing.T) {
 	}
 }
 
+func TestTrackedIntegrationBranchEntryStatus(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry trackedIntegrationBranchEntry
+		want  string
+	}{
+		{
+			name:  "missing",
+			entry: trackedIntegrationBranchEntry{Name: "release-1"},
+			want:  "missing",
+		},
+		{
+			name: "present",
+			entry: trackedIntegrationBranchEntry{
+				Name:   "release-1",
+				Exists: true,
+				Record: weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a"}},
+			},
+			want: "present",
+		},
+		{
+			name: "pending fallback",
+			entry: trackedIntegrationBranchEntry{
+				Name:   "release-1",
+				Exists: true,
+				Record: weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a"}, Skipped: []string{"feature-b"}},
+			},
+			want: "pending",
+		},
+		{
+			name: "partial",
+			entry: trackedIntegrationBranchEntry{
+				Name:            "release-1",
+				Exists:          true,
+				IncludedSkipped: []string{"feature-b"},
+				PendingSkipped:  []string{"feature-c"},
+			},
+			want: "partial",
+		},
+		{
+			name: "integrated",
+			entry: trackedIntegrationBranchEntry{
+				Name:            "release-1",
+				Exists:          true,
+				IncludedSkipped: []string{"feature-b"},
+			},
+			want: "integrated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.entry.Status(); got != tt.want {
+				t.Fatalf("Status() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteTrackedIntegrationBranchList(t *testing.T) {
 	term := ui.NewTerminal(bytes.NewBuffer(nil), &bytes.Buffer{})
 
@@ -833,14 +892,16 @@ func TestWriteTrackedIntegrationBranchList(t *testing.T) {
 
 	out.Reset()
 	entries := []trackedIntegrationBranchEntry{{
-		Name:   "release-1",
-		Exists: true,
-		Record: weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a"}, Skipped: []string{"feature-b"}, Integration: "staging"},
+		Name:            "release-1",
+		Exists:          true,
+		IncludedSkipped: []string{"feature-b"},
+		PendingSkipped:  []string{"feature-c"},
+		Record:          weaverintegration.BranchRecord{Base: "main", Branches: []string{"feature-a"}, Skipped: []string{"feature-b", "feature-c"}, Integration: "staging"},
 	}}
 	if err := writeTrackedIntegrationBranchList(&out, term, false, entries); err != nil {
 		t.Fatalf("writeTrackedIntegrationBranchList(plain) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "release-1: status=present base=main branches=feature-a skipped=feature-b integration=staging") {
+	if got := out.String(); !strings.Contains(got, "release-1: status=partial base=main branches=feature-a integrated=feature-b skipped=feature-c integration=staging") {
 		t.Fatalf("writeTrackedIntegrationBranchList(plain) = %q", got)
 	}
 
@@ -850,6 +911,83 @@ func TestWriteTrackedIntegrationBranchList(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "Integration Branches") || !strings.Contains(got, "release-1") {
 		t.Fatalf("writeTrackedIntegrationBranchList(styled) = %q", got)
+	}
+}
+
+func TestResolveTrackedIntegrationBranchProgress(t *testing.T) {
+	runner := &commandRecordingRunner{
+		results: map[string]gitrunner.Result{
+			"show-ref --verify --quiet refs/heads/feature-b": {},
+			"show-ref --verify --quiet refs/heads/feature-c": {},
+			"show-ref --verify --quiet refs/heads/feature-d": {ExitCode: 1},
+			"merge-base --is-ancestor feature-b release-1":   {},
+			"merge-base --is-ancestor feature-c release-1":   {ExitCode: 1},
+		},
+		errs: map[string]error{
+			"show-ref --verify --quiet refs/heads/feature-d": errors.New("exit status 1"),
+			"merge-base --is-ancestor feature-c release-1":   errors.New("exit status 1"),
+		},
+	}
+
+	included, pending, err := resolveTrackedIntegrationBranchProgress(context.Background(), runner, "release-1", weaverintegration.BranchRecord{
+		Skipped: []string{"feature-b", "feature-c", "feature-d"},
+	}, true)
+	if err != nil {
+		t.Fatalf("resolveTrackedIntegrationBranchProgress() error = %v", err)
+	}
+	if !reflect.DeepEqual(included, []string{"feature-b"}) {
+		t.Fatalf("included = %#v, want feature-b", included)
+	}
+	if !reflect.DeepEqual(pending, []string{"feature-c", "feature-d"}) {
+		t.Fatalf("pending = %#v, want feature-c, feature-d", pending)
+	}
+
+	included, pending, err = resolveTrackedIntegrationBranchProgress(context.Background(), runner, "release-1", weaverintegration.BranchRecord{
+		Skipped: []string{"feature-b"},
+	}, false)
+	if err != nil {
+		t.Fatalf("resolveTrackedIntegrationBranchProgress(missing branch) error = %v", err)
+	}
+	if included != nil {
+		t.Fatalf("included for missing branch = %#v, want nil", included)
+	}
+	if !reflect.DeepEqual(pending, []string{"feature-b"}) {
+		t.Fatalf("pending for missing branch = %#v, want feature-b", pending)
+	}
+}
+
+func TestResolveTrackedIntegrationBranchProgressErrors(t *testing.T) {
+	runner := &rawCommandRunner{
+		outcomes: map[string]runnerOutcome{
+			"show-ref --verify --quiet refs/heads/feature-b": {
+				result: gitrunner.Result{},
+				err:    errors.New("boom"),
+			},
+		},
+	}
+	_, _, err := resolveTrackedIntegrationBranchProgress(context.Background(), runner, "release-1", weaverintegration.BranchRecord{
+		Skipped: []string{"feature-b"},
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), `check whether skipped branch "feature-b" is integrated into "release-1"`) {
+		t.Fatalf("resolveTrackedIntegrationBranchProgress() error = %v", err)
+	}
+
+	runner = &rawCommandRunner{
+		outcomes: map[string]runnerOutcome{
+			"show-ref --verify --quiet refs/heads/feature-b": {
+				result: gitrunner.Result{},
+			},
+			"merge-base --is-ancestor feature-b release-1": {
+				result: gitrunner.Result{},
+				err:    errors.New("boom"),
+			},
+		},
+	}
+	_, _, err = resolveTrackedIntegrationBranchProgress(context.Background(), runner, "release-1", weaverintegration.BranchRecord{
+		Skipped: []string{"feature-b"},
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), `check whether skipped branch "feature-b" is integrated into "release-1"`) {
+		t.Fatalf("resolveTrackedIntegrationBranchProgress(merge-base) error = %v", err)
 	}
 }
 
@@ -1005,6 +1143,7 @@ func TestLoadTrackedIntegrationBranchEntries(t *testing.T) {
 	if err := store.Track("release-1", weaverintegration.BranchRecord{
 		Base:     "main",
 		Branches: []string{"feature-a"},
+		Skipped:  []string{"feature-b", "feature-c"},
 	}); err != nil {
 		t.Fatalf("Track() error = %v", err)
 	}
@@ -1013,6 +1152,13 @@ func TestLoadTrackedIntegrationBranchEntries(t *testing.T) {
 		repoRoot: repoRoot,
 		results: map[string]gitrunner.Result{
 			"show-ref --verify --quiet refs/heads/release-1": {},
+			"show-ref --verify --quiet refs/heads/feature-b": {},
+			"show-ref --verify --quiet refs/heads/feature-c": {},
+			"merge-base --is-ancestor feature-b release-1":   {},
+			"merge-base --is-ancestor feature-c release-1":   {ExitCode: 1},
+		},
+		errs: map[string]error{
+			"merge-base --is-ancestor feature-c release-1": errors.New("exit status 1"),
 		},
 	}, store)
 	if err != nil {
@@ -1020,6 +1166,15 @@ func TestLoadTrackedIntegrationBranchEntries(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name != "release-1" || !entries[0].Exists {
 		t.Fatalf("entries = %#v", entries)
+	}
+	if got := entries[0].Status(); got != "partial" {
+		t.Fatalf("entries[0].Status() = %q, want partial", got)
+	}
+	if !reflect.DeepEqual(entries[0].IncludedSkipped, []string{"feature-b"}) {
+		t.Fatalf("IncludedSkipped = %#v, want feature-b", entries[0].IncludedSkipped)
+	}
+	if !reflect.DeepEqual(entries[0].PendingSkipped, []string{"feature-c"}) {
+		t.Fatalf("PendingSkipped = %#v, want feature-c", entries[0].PendingSkipped)
 	}
 
 	emptyEntries, err := loadTrackedIntegrationBranchEntries(context.Background(), &commandRecordingRunner{repoRoot: repoRoot}, weaverintegration.NewBranchStore(t.TempDir()))
@@ -1037,6 +1192,7 @@ func TestLoadTrackedIntegrationBranchEntriesErrors(t *testing.T) {
 	if err := store.Track("release-1", weaverintegration.BranchRecord{
 		Base:     "main",
 		Branches: []string{"feature-a"},
+		Skipped:  []string{"feature-b"},
 	}); err != nil {
 		t.Fatalf("Track() error = %v", err)
 	}
@@ -1049,6 +1205,17 @@ func TestLoadTrackedIntegrationBranchEntriesErrors(t *testing.T) {
 	}, store)
 	if err == nil || !strings.Contains(err.Error(), `check integration branch "release-1"`) {
 		t.Fatalf("loadTrackedIntegrationBranchEntries() error = %v", err)
+	}
+
+	_, err = loadTrackedIntegrationBranchEntries(context.Background(), &rawCommandRunner{
+		repoRoot: repoRoot,
+		outcomes: map[string]runnerOutcome{
+			"show-ref --verify --quiet refs/heads/release-1": {},
+			"show-ref --verify --quiet refs/heads/feature-b": {err: errors.New("boom")},
+		},
+	}, store)
+	if err == nil || !strings.Contains(err.Error(), `check whether skipped branch "feature-b" is integrated into "release-1"`) {
+		t.Fatalf("loadTrackedIntegrationBranchEntries(skipped branch) error = %v", err)
 	}
 
 	brokenRepoRoot := t.TempDir()
@@ -1153,6 +1320,14 @@ func TestExportAndImportCommands(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
+	if err := weaverintegration.NewBranchStore(repoRoot).Track("release-1", weaverintegration.BranchRecord{
+		Base:        "main",
+		Branches:    []string{"feature-a"},
+		Skipped:     []string{"feature-b"},
+		Integration: "integration",
+	}); err != nil {
+		t.Fatalf("Track() integration branch error = %v", err)
+	}
 
 	var exported bytes.Buffer
 	exportCmd.SetOut(&exported)
@@ -1185,6 +1360,14 @@ func TestExportAndImportCommands(t *testing.T) {
 	}
 	if !strings.Contains(string(integrationData), "base: main") || !strings.Contains(string(integrationData), "- feature-a") {
 		t.Fatalf("imported integrations missing recipe: %s", integrationData)
+	}
+
+	integrationBranchData, err := os.ReadFile(filepath.Join(importRepo, ".git", "weaver", "integration-branches.yaml"))
+	if err != nil {
+		t.Fatalf("read imported integration branches: %v", err)
+	}
+	if !strings.Contains(string(integrationBranchData), "release-1:") || !strings.Contains(string(integrationBranchData), "integration: integration") {
+		t.Fatalf("imported integration branches missing tracked branch: %s", integrationBranchData)
 	}
 }
 
